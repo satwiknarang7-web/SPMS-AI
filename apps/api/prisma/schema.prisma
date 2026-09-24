@@ -1,0 +1,862 @@
+// Segue Pharmacy Management System — data model.
+//
+// One connected model shared by every module: products, inventory, pricing and
+// transactions are single entities, never per-module copies. Monetary values are
+// integer cents (AUD). Enumerations are stored as strings and validated in the
+// application layer (see @segue/shared), which keeps the schema portable between
+// SQLite (development) and PostgreSQL (production).
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+// ───────────────────────────── Platform ─────────────────────────────
+
+model Tenant {
+  id            String         @id @default(cuid())
+  name          String
+  abn           String?
+  createdAt     DateTime       @default(now())
+  subscriptions Subscription[]
+  stores        Store[]
+  users         User[]
+  groups        StoreGroup[]
+  settings      String         @default("{}") // JSON: tenant-wide settings (surcharge %, margin threshold…)
+}
+
+/// A purchased module. The API grants access to /api/<module> only while a
+/// subscription for that module is ACTIVE/TRIAL and unexpired.
+model Subscription {
+  id        String    @id @default(cuid())
+  tenantId  String
+  tenant    Tenant    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  module    String // DISPENSE | POS | OFFICE | HQ
+  status    String // ACTIVE | TRIAL | SUSPENDED | EXPIRED
+  seats     Int       @default(0) // 0 = unlimited
+  startsAt  DateTime  @default(now())
+  expiresAt DateTime?
+  updatedAt DateTime  @updatedAt
+
+  @@unique([tenantId, module])
+}
+
+model Store {
+  id         String             @id @default(cuid())
+  tenantId   String
+  tenant     Tenant             @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  code       String
+  name       String
+  suburb     String
+  state      String
+  status     String             @default("ACTIVE") // ACTIVE | SUSPENDED
+  online     Boolean            @default(true) // store agent connectivity (drives sync queue)
+  lastSeenAt DateTime?
+  createdAt  DateTime           @default(now())
+  groups     StoreGroupMember[]
+  stock      StoreProduct[]
+
+  @@unique([tenantId, code])
+}
+
+model StoreGroup {
+  id          String             @id @default(cuid())
+  tenantId    String
+  tenant      Tenant             @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  name        String
+  description String?
+  /// Precedence: lower number wins when a store inherits conflicting settings.
+  priority    Int                @default(100)
+  createdAt   DateTime           @default(now())
+  members     StoreGroupMember[]
+}
+
+model StoreGroupMember {
+  storeId String
+  groupId String
+  store   Store      @relation(fields: [storeId], references: [id], onDelete: Cascade)
+  group   StoreGroup @relation(fields: [groupId], references: [id], onDelete: Cascade)
+
+  @@id([storeId, groupId])
+}
+
+model User {
+  id             String     @id @default(cuid())
+  tenantId       String?
+  tenant         Tenant?    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  email          String     @unique
+  name           String
+  passwordHash   String
+  isActive       Boolean    @default(true)
+  /// Segue vendor staff who manage tenants and module licences. Never tenant-scoped.
+  isPlatformAdmin Boolean   @default(false)
+  lastLoginAt    DateTime?
+  /// Consecutive failed sign-ins; the account locks temporarily after too many.
+  failedLoginCount Int      @default(0)
+  lockedUntil    DateTime?
+  createdAt      DateTime   @default(now())
+  roles          UserRole[]
+  sessions       Session[]
+}
+
+/// A signed-in device. Access tokens reference their session, so revoking the session
+/// (sign-out, password reset, deactivation, refresh-token reuse) cuts off access at once.
+model Session {
+  id            String         @id @default(cuid())
+  userId        String
+  user          User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  storeId       String?
+  userAgent     String?
+  ip            String?
+  createdAt     DateTime       @default(now())
+  lastUsedAt    DateTime       @default(now())
+  /// Absolute lifetime: the user must sign in again after this, however active.
+  expiresAt     DateTime
+  revokedAt     DateTime?
+  revokedReason String?
+  refreshTokens RefreshToken[]
+
+  @@index([userId])
+}
+
+/// Opaque, single-use refresh tokens (stored as SHA-256 hashes). Each refresh rotates the
+/// token; presenting an already-used token is treated as theft and revokes the session.
+model RefreshToken {
+  id           String    @id @default(cuid())
+  sessionId    String
+  session      Session   @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  tokenHash    String    @unique
+  expiresAt    DateTime
+  createdAt    DateTime  @default(now())
+  usedAt       DateTime?
+  replacedById String?
+
+  @@index([sessionId])
+}
+
+/// A role granted to a user, optionally scoped to one store (null = all stores in tenant).
+model UserRole {
+  id      String  @id @default(cuid())
+  userId  String
+  user    User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  role    String
+  storeId String?
+
+  @@unique([userId, role, storeId])
+}
+
+/// Tamper-evident audit trail. Each event carries a SHA-256 hash chained to the
+/// previous event in the same tenant, so any edit or deletion breaks the chain.
+model AuditEvent {
+  id         String   @id @default(cuid())
+  tenantId   String?
+  storeId    String?
+  userId     String?
+  userName   String?
+  role       String?
+  module     String // DISPENSE | POS | OFFICE | HQ | PLATFORM
+  action     String
+  entityType String
+  entityId   String?
+  summary    String
+  before     String? // JSON
+  after      String? // JSON
+  context    String   @default("ONLINE")
+  createdAt  DateTime @default(now())
+  prevHash   String?
+  hash       String
+
+  @@index([tenantId, createdAt])
+  @@index([entityType, entityId])
+}
+
+// ───────────────────── Shared product & inventory model ─────────────────────
+
+model Supplier {
+  id          String            @id @default(cuid())
+  tenantId    String
+  name        String
+  accountNo   String?
+  contactName String?
+  email       String?
+  phone       String?
+  electronic  Boolean           @default(false) // connected via electronic ordering gateway
+  terms       String?
+  createdAt   DateTime          @default(now())
+  products    ProductSupplier[]
+  orders      PurchaseOrder[]
+  priceFiles  PriceFile[]
+}
+
+/// Drug master: the clinical catalogue used by Dispense. Stocked packs link via Product.drugId.
+model Drug {
+  id            String    @id @default(cuid())
+  tenantId      String
+  genericName   String
+  brandName     String
+  ingredient    String
+  strength      String
+  form          String
+  packSize      Int
+  drugClass     String?
+  schedule      String? // S2 | S3 | S4 | S8
+  pbsCode       String?
+  dpmq          Int? // PBS dispensed price for maximum quantity (cents)
+  brandPremium  Int       @default(0)
+  maxQuantity   Int?
+  maxRepeats    Int?
+  minRepeatDays Int?
+  products      Product[]
+  flags         DrugGroupFlag[]
+  prescriptions Prescription[]
+
+  @@index([tenantId, genericName])
+}
+
+model DrugInteraction {
+  id          String @id @default(cuid())
+  ingredientA String
+  ingredientB String
+  severity    String // HIGH | MODERATE | LOW
+  description String
+}
+
+model Product {
+  id          String            @id @default(cuid())
+  tenantId    String
+  sku         String
+  barcode     String?
+  name        String
+  brand       String?
+  category    String
+  department  String // DISPENSARY | FRONT_SHOP
+  drugId      String?
+  drug        Drug?             @relation(fields: [drugId], references: [id])
+  /// HQ master cost and retail price. Store-level prices live in StoreProduct.
+  costPrice   Int
+  retailPrice Int
+  gstFree     Boolean           @default(false)
+  priceLevel  String?
+  hotkeyColor String? // POS hot key colour when pinned
+  isActive    Boolean           @default(true)
+  createdAt   DateTime          @default(now())
+  updatedAt   DateTime          @updatedAt
+  stores      StoreProduct[]
+  suppliers   ProductSupplier[]
+  prescriptions Prescription[]
+
+  @@unique([tenantId, sku])
+  @@index([tenantId, barcode])
+}
+
+model ProductSupplier {
+  productId    String
+  supplierId   String
+  product      Product  @relation(fields: [productId], references: [id], onDelete: Cascade)
+  supplier     Supplier @relation(fields: [supplierId], references: [id], onDelete: Cascade)
+  supplierCode String?
+  cost         Int
+  isPrimary    Boolean  @default(false)
+
+  @@id([productId, supplierId])
+}
+
+/// Per-store stock position and optional store price override.
+model StoreProduct {
+  storeId      String
+  productId    String
+  store        Store   @relation(fields: [storeId], references: [id], onDelete: Cascade)
+  product      Product @relation(fields: [productId], references: [id], onDelete: Cascade)
+  onHand       Int     @default(0)
+  reorderPoint Int     @default(0)
+  reorderQty   Int     @default(0)
+  /// Store selling price; null means the HQ master retail price applies.
+  retailPrice  Int?
+  costPrice    Int?
+
+  @@id([storeId, productId])
+}
+
+/// Every stock change, with reason code and actor. StoreProduct.onHand is the running balance.
+model StockMovement {
+  id        String   @id @default(cuid())
+  storeId   String
+  productId String
+  quantity  Int // signed delta
+  reason    String // RECEIPT | SALE | DISPENSE | ADJUSTMENT | STOCKTAKE | RETURN | WRITE_OFF | TRANSFER
+  refType   String?
+  refId     String?
+  note      String?
+  userId    String?
+  createdAt DateTime @default(now())
+
+  @@index([storeId, productId, createdAt])
+}
+
+/// Price history: prices are never overwritten silently.
+model PriceHistory {
+  id          String   @id @default(cuid())
+  productId   String
+  storeId     String? // null = HQ master
+  oldCost     Int?
+  newCost     Int?
+  oldRetail   Int?
+  newRetail   Int?
+  source      String // OFFICE_REVIEW | HQ_PUBLISH | PRICE_FILE | RECEIVING | ROLLBACK
+  refId       String?
+  userId      String?
+  effectiveAt DateTime @default(now())
+
+  @@index([productId, effectiveAt])
+}
+
+// ───────────────────────────── Dispense ─────────────────────────────
+
+model Patient {
+  id              String         @id @default(cuid())
+  tenantId        String
+  firstName       String
+  lastName        String
+  dob             DateTime
+  gender          String?
+  medicareNo      String?
+  concessionType  String         @default("GENERAL") // GENERAL | CONCESSION | DVA
+  concessionNo    String?
+  phone           String?
+  email           String?
+  address         String?
+  allergies       String         @default("[]") // JSON [{substance, reaction, severity}]
+  alerts          String         @default("[]") // JSON string[]
+  notes           String?
+  safetyNetTotal  Int            @default(0) // current calendar year
+  createdAt       DateTime       @default(now())
+  prescriptions   Prescription[]
+  customer        Customer?
+
+  @@index([tenantId, lastName])
+}
+
+model Prescriber {
+  id            String         @id @default(cuid())
+  tenantId      String
+  name          String
+  prescriberNo  String
+  type          String         @default("GP")
+  practice      String?
+  phone         String?
+  prescriptions Prescription[]
+}
+
+model Prescription {
+  id                String                   @id @default(cuid())
+  tenantId          String
+  storeId           String
+  number            String
+  patientId         String
+  patient           Patient                  @relation(fields: [patientId], references: [id])
+  prescriberId      String
+  prescriber        Prescriber               @relation(fields: [prescriberId], references: [id])
+  drugId            String
+  drug              Drug                     @relation(fields: [drugId], references: [id])
+  productId         String? // selected pack to dispense
+  product           Product?                 @relation(fields: [productId], references: [id])
+  scriptType        String // PBS | RPBS | PRIVATE
+  source            String // PAPER | ERX_TOKEN | ASL
+  erxToken          String?
+  prescribedDate    DateTime
+  directions        String
+  quantity          Int
+  repeatsTotal      Int
+  /// 0 = original supply, n = nth repeat. Each supply is its own record linked to the original.
+  supplyNo          Int                      @default(0)
+  originalId        String?
+  brandSubstitution Boolean                  @default(true) // false = "brand substitution not permitted"
+  status            String // RECEIVED | IN_PROGRESS | AWAITING_CHECK | READY | COLLECTED | DEFERRED | CANCELLED
+  patientPrice      Int?
+  governmentContribution Int?
+  safetyNetContribution  Int?
+  pricingBasis      String?
+  alerts            String                   @default("[]") // JSON SafetyAlert[] at last check
+  scanVerified      Boolean                  @default(false)
+  preparedById      String?
+  checkedById       String?
+  dispensedAt       DateTime?
+  collectedAt       DateTime?
+  saleId            String?
+  createdAt         DateTime                 @default(now())
+  updatedAt         DateTime                 @updatedAt
+  interventions     ClinicalIntervention[]
+
+  @@unique([storeId, number])
+  @@index([storeId, status])
+}
+
+model ClinicalIntervention {
+  id             String       @id @default(cuid())
+  prescriptionId String
+  prescription   Prescription @relation(fields: [prescriptionId], references: [id], onDelete: Cascade)
+  alertType      String
+  outcome        String // SUPPLIED_AFTER_REVIEW | PRESCRIBER_CONTACTED | NOT_SUPPLIED
+  note           String
+  userId         String
+  createdAt      DateTime     @default(now())
+}
+
+/// Simulated national electronic prescription exchange (adapter target).
+model ErxToken {
+  token          String   @id
+  tenantId       String
+  patientId      String
+  prescriberId   String
+  drugId         String
+  scriptType     String
+  directions     String
+  quantity       Int
+  repeats        Int
+  prescribedDate DateTime
+  claimed        Boolean  @default(false)
+}
+
+// ─────────────────────────────── POS ───────────────────────────────
+
+model Customer {
+  id           String               @id @default(cuid())
+  tenantId     String
+  name         String
+  email        String?
+  phone        String?
+  loyaltyNo    String?
+  points       Int                  @default(0)
+  hasAccount   Boolean              @default(false)
+  creditLimit  Int                  @default(0)
+  balance      Int                  @default(0) // amount owed to the pharmacy
+  accountFee   Int                  @default(0) // scheduled monthly fee
+  patientId    String?              @unique
+  patient      Patient?             @relation(fields: [patientId], references: [id])
+  createdAt    DateTime             @default(now())
+  transactions AccountTransaction[]
+}
+
+model Shift {
+  id            String      @id @default(cuid())
+  storeId       String
+  register      String
+  openedById    String
+  openedAt      DateTime    @default(now())
+  openingFloat  Int
+  closedAt      DateTime?
+  closedById    String?
+  countedCash   Int?
+  expectedCash  Int?
+  status        String      @default("OPEN") // OPEN | CLOSED
+  sales         Sale[]
+  cashEvents    CashEvent[]
+}
+
+model Sale {
+  id             String     @id @default(cuid())
+  storeId        String
+  shiftId        String
+  shift          Shift      @relation(fields: [shiftId], references: [id])
+  number         String
+  type           String     @default("SALE") // SALE | RETURN
+  originalSaleId String?
+  customerId     String?
+  subtotal       Int
+  discountTotal  Int
+  surcharge      Int        @default(0)
+  gst            Int
+  total          Int
+  status         String     @default("COMPLETED") // COMPLETED | REFUNDED | PARTIALLY_REFUNDED
+  cashierId      String
+  receiptEmail   String?
+  createdAt      DateTime   @default(now())
+  lines          SaleLine[]
+  payments       Payment[]
+
+  @@unique([storeId, number])
+  @@index([storeId, createdAt])
+}
+
+model SaleLine {
+  id             String  @id @default(cuid())
+  saleId         String
+  sale           Sale    @relation(fields: [saleId], references: [id], onDelete: Cascade)
+  productId      String?
+  prescriptionId String?
+  description    String
+  quantity       Int
+  unitPrice      Int
+  unitCost       Int     @default(0)
+  discount       Int     @default(0)
+  lineTotal      Int
+  gstFree        Boolean @default(false)
+  isPbs          Boolean @default(false)
+  promotionId    String?
+  refundedQty    Int     @default(0)
+}
+
+model Payment {
+  id        String @id @default(cuid())
+  saleId    String
+  sale      Sale   @relation(fields: [saleId], references: [id], onDelete: Cascade)
+  tender    String
+  amount    Int
+  /// Tokenised terminal reference — raw card data is never stored.
+  reference String?
+}
+
+model CashEvent {
+  id        String   @id @default(cuid())
+  shiftId   String
+  shift     Shift    @relation(fields: [shiftId], references: [id])
+  type      String // PAID_IN | PAID_OUT | NO_SALE
+  amount    Int      @default(0)
+  reason    String
+  userId    String
+  createdAt DateTime @default(now())
+}
+
+model Layby {
+  id         String   @id @default(cuid())
+  storeId    String
+  number     String
+  customerId String
+  items      String // JSON [{productId, description, quantity, unitPrice}]
+  total      Int
+  paid       Int      @default(0)
+  status     String   @default("ACTIVE") // ACTIVE | COMPLETED | CANCELLED
+  dueDate    DateTime
+  createdAt  DateTime @default(now())
+  payments   String   @default("[]") // JSON [{amount, tender, at}]
+}
+
+model HireItem {
+  id        String         @id @default(cuid())
+  storeId   String
+  group     String // Crutches | Wheelchair | Nebuliser | Vaporiser …
+  name      String
+  serial    String
+  weeklyRate Int
+  deposit   Int
+  status    String         @default("AVAILABLE") // AVAILABLE | ON_HIRE | MAINTENANCE
+  contracts HireContract[]
+}
+
+model HireContract {
+  id           String    @id @default(cuid())
+  storeId      String
+  number       String
+  hireItemId   String
+  item         HireItem  @relation(fields: [hireItemId], references: [id])
+  customerId   String
+  startDate    DateTime  @default(now())
+  dueDate      DateTime
+  returnedAt   DateTime?
+  depositPaid  Int
+  depositRefunded Int?
+  hireCharge   Int?
+  status       String    @default("ACTIVE") // ACTIVE | RETURNED
+  notes        String?
+}
+
+// ────────────────────────────── Office ──────────────────────────────
+
+model PurchaseOrder {
+  id          String              @id @default(cuid())
+  storeId     String
+  number      String
+  supplierId  String
+  supplier    Supplier            @relation(fields: [supplierId], references: [id])
+  status      String              @default("DRAFT") // DRAFT | SUBMITTED | PARTIALLY_RECEIVED | RECEIVED | CANCELLED
+  source      String              @default("MANUAL") // MANUAL | REORDER | TEMPLATE
+  createdById String
+  submittedAt DateTime?
+  expectedAt  DateTime?
+  notes       String?
+  createdAt   DateTime            @default(now())
+  lines       PurchaseOrderLine[]
+  receipts    GoodsReceipt[]
+
+  @@unique([storeId, number])
+}
+
+model PurchaseOrderLine {
+  id          String        @id @default(cuid())
+  orderId     String
+  order       PurchaseOrder @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  productId   String
+  qtyOrdered  Int
+  qtyReceived Int           @default(0)
+  unitCost    Int
+}
+
+model GoodsReceipt {
+  id           String             @id @default(cuid())
+  orderId      String
+  order        PurchaseOrder      @relation(fields: [orderId], references: [id])
+  invoiceNo    String?
+  receivedById String
+  receivedAt   DateTime           @default(now())
+  lines        GoodsReceiptLine[]
+}
+
+model GoodsReceiptLine {
+  id         String       @id @default(cuid())
+  receiptId  String
+  receipt    GoodsReceipt @relation(fields: [receiptId], references: [id], onDelete: Cascade)
+  productId  String
+  quantity   Int
+  unitCost   Int
+}
+
+model AccountTransaction {
+  id         String   @id @default(cuid())
+  customerId String
+  customer   Customer @relation(fields: [customerId], references: [id])
+  type       String // CHARGE | PAYMENT | FEE | ADJUSTMENT
+  amount     Int // positive increases balance owed
+  saleId     String?
+  note       String?
+  userId     String?
+  createdAt  DateTime @default(now())
+}
+
+model Stocktake {
+  id        String           @id @default(cuid())
+  storeId   String
+  name      String
+  scope     String           @default("FULL") // FULL | CATEGORY
+  category  String?
+  status    String           @default("COUNTING") // COUNTING | REVIEW | POSTED | CANCELLED
+  createdById String
+  createdAt DateTime         @default(now())
+  postedAt  DateTime?
+  counts    StocktakeCount[]
+}
+
+model StocktakeCount {
+  id          String    @id @default(cuid())
+  stocktakeId String
+  stocktake   Stocktake @relation(fields: [stocktakeId], references: [id], onDelete: Cascade)
+  productId   String
+  systemQty   Int
+  countedQty  Int?
+  reasonCode  String?
+
+  @@unique([stocktakeId, productId])
+}
+
+// ─────────────────────────────── HQ ───────────────────────────────
+
+model DispensePricingRule {
+  id             String    @id @default(cuid())
+  tenantId       String
+  name           String
+  groupId        String
+  condition      String // PBS | PRIVATE | CONCESSION
+  drugClass      String?
+  markupPct      Float     @default(0)
+  dispensingFee  Int       @default(0)
+  copayDiscount  Int       @default(0)
+  minMarginPct   Float     @default(0)
+  status         String    @default("DRAFT") // DRAFT | SCHEDULED | PUBLISHED | ROLLED_BACK
+  effectiveAt    DateTime?
+  publicationId  String?
+  createdAt      DateTime  @default(now())
+}
+
+model RankingStrategy {
+  id       String @id @default(cuid())
+  tenantId String
+  groupId  String @unique
+  basis    String // LOWEST_COST | HIGHEST_MARGIN | STOCK_ON_HAND
+}
+
+model DrugGroupFlag {
+  id      String @id @default(cuid())
+  groupId String
+  drugId  String
+  drug    Drug   @relation(fields: [drugId], references: [id], onDelete: Cascade)
+  flag    String // PREFERRED | RESTRICTED | EXCLUDED
+
+  @@unique([groupId, drugId])
+}
+
+model Promotion {
+  id          String   @id @default(cuid())
+  tenantId    String
+  name        String
+  type        String // PERCENT_OFF | AMOUNT_OFF | FIXED_PRICE
+  value       Int // percent (whole number) or cents
+  productIds  String // JSON string[]
+  storeIds    String // JSON string[]
+  startsAt    DateTime
+  endsAt      DateTime
+  status      String   @default("DRAFT") // DRAFT | PUBLISHED | ROLLED_BACK
+  publicationId String?
+  createdAt   DateTime @default(now())
+}
+
+model PriceFile {
+  id           String          @id @default(cuid())
+  tenantId     String
+  supplierId   String
+  supplier     Supplier        @relation(fields: [supplierId], references: [id])
+  fileName     String
+  status       String          @default("VALIDATED") // VALIDATED | APPROVED | PUBLISHED | REJECTED
+  summary      String          @default("{}") // JSON counts per issue
+  uploadedById String
+  approvedById String?
+  publicationId String?
+  createdAt    DateTime        @default(now())
+  lines        PriceFileLine[]
+}
+
+model PriceFileLine {
+  id           String    @id @default(cuid())
+  priceFileId  String
+  priceFile    PriceFile @relation(fields: [priceFileId], references: [id], onDelete: Cascade)
+  rowNo        Int
+  barcode      String
+  supplierCode String
+  description  String
+  productId    String?
+  oldCost      Int?
+  newCost      Int?
+  oldRetail    Int?
+  newRetail    Int?
+  changePct    Float?
+  issue        String
+  message      String?
+  accepted     Boolean   @default(true)
+}
+
+/// A unit of configuration HQ distributes to stores. Payload is applied per store by the
+/// sync worker; `rollback` holds what is needed to restore the previous state.
+model Publication {
+  id          String              @id @default(cuid())
+  tenantId    String
+  kind        String // RETAIL_PRICE | DISPENSE_PRICING | PROMOTION | DRUG_CONFIG | PRICE_FILE | ROLLBACK
+  title       String
+  payload     String // JSON
+  rollback    String? // JSON
+  status      String              @default("PUBLISHED") // SCHEDULED | PUBLISHED | ROLLED_BACK
+  effectiveAt DateTime            @default(now())
+  /// Set when central effects ran (at or after effectiveAt). Scheduled changes wait for this.
+  activatedAt DateTime?
+  rollbackOfId String?
+  createdById String
+  createdAt   DateTime            @default(now())
+  targets     PublicationTarget[]
+}
+
+model PublicationTarget {
+  id            String      @id @default(cuid())
+  publicationId String
+  publication   Publication @relation(fields: [publicationId], references: [id], onDelete: Cascade)
+  storeId       String
+  status        String      @default("QUEUED") // QUEUED | APPLIED | FAILED
+  attempts      Int         @default(0)
+  lastAttemptAt DateTime?
+  appliedAt     DateTime?
+  error         String?
+  /// Store state captured immediately before applying, used for exact rollback.
+  previous      String?
+
+  @@unique([publicationId, storeId])
+  @@index([status])
+}
+
+/// De-identified daily store metrics collected for HQ reporting (HQ-SY-04). HQ never
+/// reads patient-level data — only these aggregates.
+model StoreDailyMetric {
+  id               String   @id @default(cuid())
+  tenantId         String
+  storeId          String
+  date             String // YYYY-MM-DD (store local)
+  retailSales      Int      @default(0)
+  retailCost       Int      @default(0)
+  transactions     Int      @default(0)
+  scripts          Int      @default(0)
+  pbsScripts       Int      @default(0)
+  scriptRevenue    Int      @default(0)
+  stockValue       Int      @default(0)
+  stockouts        Int      @default(0)
+  promoSales       Int      @default(0)
+  categorySales    String   @default("{}") // JSON {category: cents}
+  collectedAt      DateTime @default(now())
+
+  @@unique([storeId, date])
+  @@index([tenantId, date])
+}
+
+/// Scheduled delivery of an HQ report template (HQ-RE-04). The report job renders the
+/// report and hands it to the email adapter (outbox in development).
+model ReportSchedule {
+  id         String    @id @default(cuid())
+  tenantId   String
+  template   String
+  filters    String    @default("{}")
+  recipients String // comma-separated
+  cadence    String // DAILY | WEEKLY | MONTHLY
+  format     String    @default("CSV")
+  lastRunAt  DateTime?
+  nextRunAt  DateTime
+  createdById String
+  createdAt  DateTime  @default(now())
+}
+
+model EmailOutbox {
+  id        String   @id @default(cuid())
+  tenantId  String
+  to        String
+  subject   String
+  body      String
+  attachmentName String?
+  attachment String?
+  createdAt DateTime @default(now())
+}
+
+// ─────────────────────────── External integrations ───────────────────────────
+
+/// Local mirror of the PBS Schedule (PBS Data API v3). Dispensing reads the mirror, so an
+/// outage or rate limit on the government API never blocks the dispensary.
+model PbsItem {
+  id            String   @id @default(cuid())
+  itemKey       String   @unique // li_item_id when supplied, otherwise schedule|pbs_code|brand
+  scheduleCode  String
+  pbsCode       String
+  drugName      String
+  liDrugName    String?
+  brandName     String?
+  form          String?
+  packSize      Int?
+  maxQuantity   Int?
+  repeats       Int?
+  dpmq          Int? // cents, when the schedule supplies it
+  benefitType   String? // U (unrestricted) | R (restricted) | A (authority)
+  programCode   String?
+  raw           String // original record for audit / future field mapping
+  syncedAt      DateTime @default(now())
+
+  @@index([pbsCode])
+  @@index([drugName])
+}
+
+/// Status of each external integration adapter (last run, outcome, counts).
+model IntegrationRun {
+  id         String    @id @default(cuid())
+  integration String // PBS | ERX | MIMS | DDBOOK | METHDA | MHR | ASL | HI
+  status     String // SUCCESS | FAILED | SKIPPED | RUNNING
+  message    String?
+  records    Int       @default(0)
+  startedAt  DateTime  @default(now())
+  finishedAt DateTime?
+
+  @@index([integration, startedAt])
+}

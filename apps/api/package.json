@@ -1,0 +1,37 @@
+{
+  "name": "@segue/api",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "tsx watch --clear-screen=false src/server.ts",
+    "build": "tsup src/server.ts --format esm --target node20 --out-dir dist --clean --no-splitting --noExternal @segue/shared",
+    "start": "node dist/server.js",
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit",
+    "db:generate": "prisma generate",
+    "db:push": "prisma db push --skip-generate",
+    "db:seed": "tsx prisma/seed.ts",
+    "db:reset": "prisma db push --force-reset --skip-generate && prisma generate && tsx prisma/seed.ts",
+    "db:setup": "prisma db push --skip-generate && prisma generate && tsx prisma/seed.ts"
+  },
+  "dependencies": {
+    "@fastify/cookie": "^11.1.2",
+    "@fastify/cors": "^11.3.0",
+    "@fastify/jwt": "^10.2.2",
+    "@fastify/rate-limit": "^10.3.0",
+    "@fastify/helmet": "^13.0.2",
+    "@prisma/client": "~6.19.3",
+    "@segue/shared": "*",
+    "bcryptjs": "^3.0.3",
+    "fastify": "^5.12.5",
+    "zod": "^4.1.12"
+  },
+  "devDependencies": {
+    "@types/node": "^24.0.0",
+    "prisma": "~6.19.3",
+    "tsup": "^8.5.1",
+    "tsx": "^4.20.6",
+    "vitest": "^3.2.4"
+  }
+}

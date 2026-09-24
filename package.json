@@ -1,0 +1,26 @@
+{
+  "name": "segue",
+  "private": true,
+  "version": "1.0.0",
+  "description": "Segue Pharmacy Management System \u00e2\u20ac\u201d Dispense, POS, Office and HQ modules on one connected platform",
+  "workspaces": [
+    "packages/*",
+    "apps/*"
+  ],
+  "scripts": {
+    "setup": "npm install && npm run db:setup -w @segue/api",
+    "dev": "concurrently -k -n api,web -c blue,magenta \"npm:dev -w @segue/api\" \"npm:dev -w @segue/web\"",
+    "build": "npm run build -w @segue/api && npm run build -w @segue/web",
+    "test": "npm test -w @segue/shared && npm test -w @segue/api",
+    "typecheck": "npm run typecheck --workspaces --if-present",
+    "db:reset": "npm run db:reset -w @segue/api",
+    "db:setup": "npm run db:setup -w @segue/api"
+  },
+  "devDependencies": {
+    "concurrently": "^9.2.1",
+    "typescript": "~5.9.3"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}

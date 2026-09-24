@@ -1,0 +1,11 @@
+node_modules
+dist
+*.db
+*.db-journal
+.env
+coverage
+.vite
+
+.next
+next-env.d.ts
+*.tsbuildinfo

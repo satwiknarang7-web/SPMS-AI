@@ -1,0 +1,70 @@
+@import 'tailwindcss';
+
+/*
+ * Segue design tokens. Each workspace carries its own accent (set as --accent on the
+ * module layout) while sharing one neutral system, echoing the four-product family.
+ */
+@theme {
+  /* Font files are self-hosted by next/font (see app/layout.tsx). */
+  --font-sans: var(--font-inter), ui-sans-serif, system-ui, -apple-system, 'Segoe UI', sans-serif;
+  --font-mono: var(--font-jetbrains), ui-monospace, SFMono-Regular, monospace;
+
+  --color-ink-50: #f5f7f9;
+  --color-ink-100: #eaeef2;
+  --color-ink-200: #d6dde4;
+  --color-ink-300: #b4c0cb;
+  --color-ink-400: #8696a5;
+  --color-ink-500: #5f7182;
+  --color-ink-600: #475867;
+  --color-ink-700: #364552;
+  --color-ink-800: #243240;
+  --color-ink-900: #15222c;
+  --color-ink-950: #0c161d;
+
+  --color-brand: #7c4dbd;
+  --color-brand-soft: #f3edfb;
+
+  --color-dispense: #0a78c2;
+  --color-pos: #0fa89a;
+  --color-office: #1f9e6e;
+  --color-hq: #2aa9e0;
+
+  --shadow-card: 0 1px 2px rgb(16 24 40 / 0.04), 0 1px 3px rgb(16 24 40 / 0.06);
+  --shadow-pop: 0 12px 32px -8px rgb(16 24 40 / 0.18), 0 4px 8px -4px rgb(16 24 40 / 0.08);
+
+  --animate-in: fade-in 160ms ease-out;
+  @keyframes fade-in {
+    from { opacity: 0; transform: translateY(4px); }
+    to { opacity: 1; transform: none; }
+  }
+}
+
+:root {
+  --accent: var(--color-brand);
+  --accent-soft: color-mix(in oklab, var(--accent) 10%, white);
+  --accent-strong: color-mix(in oklab, var(--accent) 82%, black);
+  color-scheme: light;
+}
+
+html, body, #root { height: 100%; }
+body {
+  @apply bg-ink-50 text-ink-800 antialiased;
+  font-feature-settings: 'cv11', 'ss01', 'ss03';
+}
+
+.tnum { font-variant-numeric: tabular-nums; }
+
+/* Focus ring that follows the active workspace accent. */
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+/* Scrollbars */
+* { scrollbar-width: thin; scrollbar-color: var(--color-ink-300) transparent; }
+
+@media print {
+  body { background: white !important; }
+  .no-print { display: none !important; }
+  .print-only { display: block !important; }
+  /* When a print-only document (label, receipt, report) is mounted, print just that. */
+  body:has(> .print-only) > *:not(.print-only) { display: none !important; }
+}
+.print-only { display: none; }
