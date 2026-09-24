@@ -85,4 +85,14 @@ export const ADMIN_NAV: NavItem[] = [
   { to: '/admin/security', label: 'My sessions', icon: KeyRound },
 ];
 
+/** Every permission that opens at least one page in the module. */
+export const modulePermissions = (key: ModuleKey): Permission[] => [...new Set(MODULE_UI[key].nav.flatMap((i) => i.perm ?? []))];
+
+/**
+ * Whether a workspace belongs in the user's switcher. Unlicensed modules stay listed
+ * (shown locked); licensed ones are hidden when the user's roles open none of their pages.
+ */
+export const showModule = (key: ModuleKey, hasModule: (m: ModuleKey) => boolean, canAny: (...p: Permission[]) => boolean) =>
+  !hasModule(key) || canAny(...modulePermissions(key));
+
 export const moduleInfo = (key: ModuleKey) => ({ ...MODULES[key], ...MODULE_UI[key] });

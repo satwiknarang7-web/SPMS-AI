@@ -9,11 +9,11 @@ import { StatusBadge } from '@/components/ui';
 import { useSession } from '@/features/auth/session';
 import { cn } from '@/lib/cn';
 import { date } from '@/lib/format';
-import { MODULE_UI } from '@/lib/modules';
+import { MODULE_UI, showModule } from '@/lib/modules';
 
-/** Workspace launcher — all four products, with unlicensed ones shown locked. */
+/** Workspace launcher — the user's products, with unlicensed ones shown locked. */
 export function Launcher() {
-  const { session, hasModule, store } = useSession();
+  const { session, hasModule, canAny, store } = useSession();
   const hour = new Date().getHours();
   const greeting = hour < 12 ? 'Good morning' : hour < 17 ? 'Good afternoon' : 'Good evening';
   return (
@@ -28,7 +28,7 @@ export function Launcher() {
         </p>
       </div>
       <div className="grid gap-5 md:grid-cols-2">
-        {MODULE_KEYS.map((k) => {
+        {MODULE_KEYS.filter((k) => showModule(k, hasModule, canAny)).map((k) => {
           const ui = MODULE_UI[k];
           const info = MODULES[k];
           const licensed = hasModule(k);

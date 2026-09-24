@@ -6,7 +6,7 @@ import { useEffect, useRef, useState, type CSSProperties, type ReactNode } from 
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
 import { toast } from 'sonner';
-import { ADMIN_NAV, MODULE_UI, type NavItem } from '@/lib/modules';
+import { ADMIN_NAV, MODULE_UI, showModule, type NavItem } from '@/lib/modules';
 import { useSession } from '@/features/auth/session';
 import { errorMessage } from '@/lib/api';
 import { cn } from '@/lib/cn';
@@ -60,11 +60,11 @@ export function AppShell({ children }: { children: ReactNode }) {
           )}
         </button>
 
-        {/* Module switcher: every workspace is listed; unlicensed ones show a lock. */}
+        {/* Module switcher: unlicensed workspaces show a lock; ones the user can't use are hidden. */}
         <div className={cn('px-3 pt-2 pb-3', !collapsed && 'border-b border-white/5')}>
           {!collapsed && <div className="px-2 pb-2 text-[10px] font-semibold tracking-[0.14em] text-ink-500 uppercase">Workspaces</div>}
           <div className={cn('grid gap-1', collapsed ? 'grid-cols-1' : 'grid-cols-2')}>
-            {MODULE_KEYS.map((k) => {
+            {MODULE_KEYS.filter((k) => showModule(k, hasModule, canAny)).map((k) => {
               const m = MODULE_UI[k];
               const licensed = hasModule(k);
               const active = mod === k;
