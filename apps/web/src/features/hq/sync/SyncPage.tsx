@@ -41,7 +41,7 @@ export function SyncPage() {
                     <TD className="font-medium text-ink-900">{p.title}</TD>
                     <TD><Badge tone={p.kind === 'ROLLBACK' ? 'red' : 'blue'}>{KIND_LABEL[p.kind] ?? p.kind}</Badge></TD>
                     <TD className="text-ink-600">{p.createdBy ?? 'System'}<span className="block text-xs text-ink-400">{relative(p.createdAt)}</span></TD>
-                    <TD className="text-ink-500">{p.scheduled ? <span className="flex items-center gap-1 text-violet-700"><CalendarClock className="size-3.5" />{dateTime(p.effectiveAt)}</span> : dateTime(p.effectiveAt)}</TD>
+                    <TD className="text-ink-500">{p.scheduled ? <span className="flex items-center gap-1 text-tertiary-600"><CalendarClock className="size-3.5" />{dateTime(p.effectiveAt)}</span> : dateTime(p.effectiveAt)}</TD>
                     <TD className="w-52">
                       <ProgressBar value={applied} max={p.total} tone={p.counts.FAILED ? '#e11d48' : undefined} />
                       <span className="text-xs text-ink-500">{applied}/{p.total} applied{p.counts.QUEUED ? ` · ${p.counts.QUEUED} queued` : ''}{p.counts.FAILED ? ` · ${p.counts.FAILED} failed` : ''}{p.counts.CANCELLED ? ` · ${p.counts.CANCELLED} withdrawn` : ''}</span>

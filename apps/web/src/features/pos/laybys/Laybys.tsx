@@ -84,7 +84,7 @@ export function NewLayby({ open, shiftId, onClose }: { open: boolean; shiftId: s
           <Field label="Add items" className="mt-4">
             <SearchInput value={q} onChange={setQ} placeholder="Search products" />
           </Field>
-          <div className="mt-1 max-h-48 overflow-y-auto rounded-lg ring-1 ring-ink-200">
+          <div className="mt-1 max-h-48 overflow-y-auto rounded-lg ring-1 ring-[var(--line)]">
             {products?.filter((p) => p.category !== 'Prescription').map((p) => (
               <button key={p.id} onClick={() => setItems((xs) => (xs.some((x) => x.id === p.id) ? xs : [...xs, { ...p, quantity: 1 }]))} className="flex w-full justify-between px-3 py-1.5 text-left text-sm hover:bg-ink-50"><span className="truncate">{p.name}</span><span className="tnum">{money(p.retailPrice)}</span></button>
             ))}

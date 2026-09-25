@@ -70,7 +70,7 @@ export function NewOrderDialog({ open, onClose }: { open: boolean; onClose: () =
         <div>
           <Field label="Supplier" required><Select value={supplierId} onChange={(e) => setSupplierId(e.target.value)}><option value="">Select…</option>{suppliers.data?.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}</Select></Field>
           <Field label="Add products" className="mt-4"><SearchInput value={q} onChange={setQ} placeholder="Search products" /></Field>
-          <div className="mt-1 max-h-72 overflow-y-auto rounded-lg ring-1 ring-ink-200">
+          <div className="mt-1 max-h-72 overflow-y-auto rounded-lg ring-1 ring-[var(--line)]">
             {products.data?.map((p) => (
               <button key={p.id} onClick={() => setLines((ls) => (ls.some((l) => l.productId === p.id) ? ls : [...ls, { productId: p.id, name: p.name, quantity: Math.max(p.reorderQty, 1), unitCost: p.costPrice }]))} className="flex w-full justify-between px-3 py-2 text-left text-sm hover:bg-ink-50">
                 <span className="truncate">{p.name}</span><span className="text-xs text-ink-500">{p.onHand} on hand</span>

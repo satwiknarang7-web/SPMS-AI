@@ -55,7 +55,7 @@ export function HqDashboard() {
           <div className="grid gap-6 xl:grid-cols-[2fr_1fr]">
             <Card>
               <CardHeader title="Revenue trend" subtitle="Retail and dispensing revenue across the group" />
-              <TrendChart data={data.trend} stacked series={[{ key: 'scripts', label: 'Dispensing', color: '#0a78c2' }, { key: 'retail', label: 'Retail', color: 'var(--accent)' }]} />
+              <TrendChart data={data.trend} stacked series={[{ key: 'scripts', label: 'Dispensing', color: '#0284c7' }, { key: 'retail', label: 'Retail', color: 'var(--accent)' }]} />
             </Card>
             <Card>
               <CardHeader title="Sync health" icon={<RefreshCw />} actions={<Button size="xs" loading={collect.isPending} onClick={() => collect.mutate(undefined)}>Collect now</Button>} />

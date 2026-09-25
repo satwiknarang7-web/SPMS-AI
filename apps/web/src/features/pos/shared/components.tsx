@@ -14,7 +14,7 @@ export function CustomerSelect({ value, onChange }: { value: Customer | null; on
   return (
     <div>
       <SearchInput value={q} onChange={setQ} placeholder="Search customers" />
-      <div className="mt-1 max-h-40 overflow-y-auto rounded-lg ring-1 ring-ink-200">
+      <div className="mt-1 max-h-40 overflow-y-auto rounded-lg ring-1 ring-[var(--line)]">
         {data?.map((c) => <button key={c.id} onClick={() => onChange(c)} className="block w-full px-3 py-1.5 text-left text-sm hover:bg-ink-50">{c.name} <span className="text-ink-400">{c.phone}</span></button>)}
       </div>
     </div>

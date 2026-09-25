@@ -78,7 +78,7 @@ export function BarsChart<T>({ data, xKey, series, height = 260, format = moneyC
   );
 }
 
-export const PALETTE = ['#0a78c2', '#0fa89a', '#7c4dbd', '#f59e0b', '#e11d48', '#2aa9e0', '#1f9e6e', '#64748b', '#d946ef', '#84cc16'];
+export const PALETTE = ['#0f766e', '#0284c7', '#4f46e5', '#f59e0b', '#e11d48', '#14a895', '#6366f1', '#64748b', '#d946ef', '#84cc16'];
 
 export function DonutChart({ data, height = 220, format = moneyCompact }: { data: { name: string; value: number }[]; height?: number; format?: (v: number) => string }) {
   const total = data.reduce((s, d) => s + d.value, 0);

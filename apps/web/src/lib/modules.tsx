@@ -27,7 +27,7 @@ export interface ModuleUi {
 
 export const MODULE_UI: Record<ModuleKey, ModuleUi> = {
   DISPENSE: {
-    key: 'DISPENSE', label: 'Dispense', path: '/dispense', color: '#0a78c2', icon: Pill, home: ['dispense.scripts.read'],
+    key: 'DISPENSE', label: 'Dispense', path: '/dispense', color: '#0369a1', icon: Pill, home: ['dispense.scripts.read'],
     nav: [
       { to: '/dispense', label: 'Dashboard', icon: LayoutDashboard, end: true, perm: ['dispense.scripts.read'] },
       { to: '/dispense/new', label: 'New script', icon: PlusCircle, perm: ['dispense.scripts.write'] },
@@ -37,7 +37,7 @@ export const MODULE_UI: Record<ModuleKey, ModuleUi> = {
     ],
   },
   POS: {
-    key: 'POS', label: 'POS', path: '/pos', color: '#0fa89a', icon: ShoppingCart, home: ['pos.sell'],
+    key: 'POS', label: 'POS', path: '/pos', color: '#4f46e5', icon: ShoppingCart, home: ['pos.sell'],
     nav: [
       { to: '/pos', label: 'Register', icon: ScanLine, end: true, perm: ['pos.sell'] },
       { to: '/pos/sales', label: 'Sales & returns', icon: Receipt, perm: ['pos.sell'] },
@@ -47,7 +47,7 @@ export const MODULE_UI: Record<ModuleKey, ModuleUi> = {
     ],
   },
   OFFICE: {
-    key: 'OFFICE', label: 'Office', path: '/office', color: '#1f9e6e', icon: Building2, home: ['office.reports.read', 'office.products.read'],
+    key: 'OFFICE', label: 'Office', path: '/office', color: '#0f766e', icon: Building2, home: ['office.reports.read', 'office.products.read'],
     nav: [
       { to: '/office', label: 'Dashboard', icon: LayoutDashboard, end: true, perm: ['office.reports.read'] },
       { to: '/office/products', label: 'Products', icon: Package, perm: ['office.products.read'] },
@@ -61,7 +61,7 @@ export const MODULE_UI: Record<ModuleKey, ModuleUi> = {
     ],
   },
   HQ: {
-    key: 'HQ', label: 'HQ', path: '/hq', color: '#2aa9e0', icon: Network, home: ['hq.reports.read', 'hq.config.read'],
+    key: 'HQ', label: 'HQ', path: '/hq', color: '#0f172a', icon: Network, home: ['hq.reports.read', 'hq.config.read'],
     nav: [
       { to: '/hq', label: 'Group dashboard', icon: LayoutDashboard, end: true, perm: ['hq.reports.read'] },
       { to: '/hq/stores', label: 'Stores & groups', icon: Store, perm: ['hq.config.read'] },

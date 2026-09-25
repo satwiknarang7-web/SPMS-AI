@@ -94,6 +94,13 @@ export interface ScriptRow {
   drug: { brandName: string; genericName: string; strength: string; form: string; schedule: string | null };
 }
 
+/** Quote for a multi-item intake: each item is priced and checked against the others. */
+export interface BatchQuote {
+  items: (Quote & { drugId: string })[];
+  totalPatientPrice: number;
+  requiresIntervention: boolean;
+}
+
 export interface ErxToken {
   token: string;
   patientId: string;

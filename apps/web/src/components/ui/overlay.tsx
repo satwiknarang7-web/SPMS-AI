@@ -40,11 +40,11 @@ export function Dialog({
   const widths = { sm: 'max-w-md', md: 'max-w-lg', lg: 'max-w-2xl', xl: 'max-w-4xl' };
   return createPortal(
     <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto p-4 pt-[8vh]" role="dialog" aria-modal="true">
-      <div className="fixed inset-0 bg-ink-950/40 backdrop-blur-[2px]" onClick={onClose} />
-      <div ref={panel} className={cn('relative w-full animate-in rounded-2xl bg-white shadow-[var(--shadow-pop)] ring-1 ring-ink-200', widths[size])}>
-        <div className="flex items-start justify-between gap-4 border-b border-ink-100 px-6 py-4">
+      <div className="fixed inset-0 bg-ink-900/35 backdrop-blur-[3px]" onClick={onClose} />
+      <div ref={panel} className={cn('relative w-full animate-in rounded-[22px] bg-white shadow-[var(--shadow-pop)] ring-1 ring-[var(--line)]', widths[size])}>
+        <div className="flex items-start justify-between gap-4 border-b border-[var(--line)] px-6 py-5">
           <div>
-            <h2 className="text-base font-semibold text-ink-900">{title}</h2>
+            <h2 className="text-lg font-bold text-ink-900">{title}</h2>
             {description && <p className="mt-1 text-sm text-ink-500">{description}</p>}
           </div>
           <button onClick={onClose} className="-mr-2 rounded-lg p-1.5 text-ink-400 hover:bg-ink-100 hover:text-ink-700" aria-label="Close">
@@ -52,7 +52,7 @@ export function Dialog({
           </button>
         </div>
         {children && <div className="max-h-[70vh] overflow-y-auto px-6 py-5">{children}</div>}
-        {footer && <div className="flex items-center justify-end gap-2 rounded-b-2xl border-t border-ink-100 bg-ink-50/60 px-6 py-3.5">{footer}</div>}
+        {footer && <div className="flex items-center justify-end gap-2 rounded-b-[22px] border-t border-[var(--line)] bg-ink-50/60 px-6 py-4">{footer}</div>}
       </div>
     </div>,
     document.body,
@@ -124,8 +124,8 @@ export function Drawer({ open, onClose, title, children, footer, width = 'max-w-
     <div className="fixed inset-0 z-50 flex justify-end">
       <div className="absolute inset-0 bg-ink-950/30" onClick={onClose} />
       <div className={cn('relative flex h-full w-full flex-col bg-white shadow-[var(--shadow-pop)]', width)}>
-        <div className="flex items-center justify-between border-b border-ink-100 px-6 py-4">
-          <h2 className="text-base font-semibold text-ink-900">{title}</h2>
+        <div className="flex items-center justify-between border-b border-[var(--line)] px-6 py-5">
+          <h2 className="text-lg font-bold text-ink-900">{title}</h2>
           <button onClick={onClose} className="rounded-lg p-1.5 text-ink-400 hover:bg-ink-100" aria-label="Close">
             <X className="size-4" />
           </button>

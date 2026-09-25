@@ -144,6 +144,21 @@ describe('clinical safety checks', () => {
     expect(alerts.map((a) => a.type)).toEqual(['INTERACTION', 'DUPLICATE_THERAPY']);
   });
 
+  it('checks items on the same intake against each other', () => {
+    const alerts = runSafetyChecks({
+      drug: { name: 'Tramal 50mg', ingredient: 'tramadol', drugClass: 'Opioid', schedule: 'S4' },
+      allergies: [],
+      currentMedications: [],
+      concurrentMedications: [
+        { name: 'Zoloft 50mg', ingredient: 'sertraline', drugClass: 'SSRI' },
+        { name: 'Tramedo 50mg', ingredient: 'tramadol', drugClass: 'Opioid' },
+      ],
+      interactions: [{ ingredientA: 'sertraline', ingredientB: 'tramadol', severity: 'HIGH', description: 'Serotonin syndrome risk.' }],
+    });
+    expect(alerts.map((a) => [a.type, a.severity])).toEqual([['INTERACTION', 'HIGH'], ['DUPLICATE_THERAPY', 'MODERATE']]);
+    expect(alerts[0]!.title).toBe('Interaction with Zoloft 50mg (on this intake)');
+  });
+
   it('flags S8 drugs and early repeats', () => {
     const alerts = runSafetyChecks({
       drug: { name: 'Oxycodone 5mg', ingredient: 'oxycodone', drugClass: 'Opioid', schedule: 'S8' },

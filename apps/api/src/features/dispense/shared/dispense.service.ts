@@ -1,4 +1,4 @@
-import { conditionFor, priceScript, rankCandidates, resolveDispenseRule, runSafetyChecks, safetyNetThreshold, type ConcessionType, type InteractionRule, type PatientAllergy, type SafetyAlert, type ScriptType } from '@segue/shared';
+import { conditionFor, priceScript, rankCandidates, resolveDispenseRule, runSafetyChecks, safetyNetThreshold, type ConcessionType, type ConcurrentMedication, type InteractionRule, type PatientAllergy, type SafetyAlert, type ScriptType } from '@segue/shared';
 import { json, type Db } from '../../../core/db';
 import { appliedDispenseRules, drugConfigForStore, effectiveCost, effectiveRetail, storeGroups } from '../../../core/store-config';
 
@@ -25,21 +25,47 @@ export async function currentMedications(db: Db, patientId: string, excludeScrip
     }));
 }
 
-export async function safetyFor(db: Db, patient: PatientRow, drug: DrugRow, opts: { excludeScriptId?: string; previousSupplyAt?: Date | null } = {}): Promise<SafetyAlert[]> {
+const safetyDrug = (drug: Pick<DrugRow, 'brandName' | 'strength' | 'ingredient' | 'drugClass'>): ConcurrentMedication => ({
+  name: `${drug.brandName} ${drug.strength}`,
+  ingredient: drug.ingredient,
+  drugClass: drug.drugClass,
+});
+
+/** Undispensed siblings on the same intake, so a final check still sees them before they are supplied. */
+export async function batchSiblings(db: Db, batchId: string | null | undefined, excludeScriptId?: string): Promise<ConcurrentMedication[]> {
+  if (!batchId) return [];
+  const rows = await db.prescription.findMany({
+    where: { batchId, id: excludeScriptId ? { not: excludeScriptId } : undefined, status: { in: ['IN_PROGRESS', 'AWAITING_CHECK', 'DEFERRED'] } },
+    include: { drug: true },
+  });
+  return rows.map((r) => safetyDrug(r.drug));
+}
+
+export async function safetyFor(
+  db: Db,
+  patient: PatientRow,
+  drug: DrugRow,
+  opts: { excludeScriptId?: string; previousSupplyAt?: Date | null; concurrent?: readonly ConcurrentMedication[] } = {},
+): Promise<SafetyAlert[]> {
   const [meds, interactions] = await Promise.all([
     currentMedications(db, patient.id, opts.excludeScriptId),
     db.drugInteraction.findMany({ where: { OR: [{ ingredientA: drug.ingredient }, { ingredientB: drug.ingredient }] } }),
   ]);
   return runSafetyChecks({
-    drug: { name: `${drug.brandName} ${drug.strength}`, ingredient: drug.ingredient, drugClass: drug.drugClass, schedule: drug.schedule },
+    drug: { ...safetyDrug(drug), schedule: drug.schedule },
     allergies: json.parse<PatientAllergy[]>(patient.allergies, []),
     currentMedications: meds,
+    concurrentMedications: opts.concurrent ?? [],
     interactions: interactions as InteractionRule[],
     patientAlerts: json.parse<string[]>(patient.alerts, []),
     previousSupplyAt: opts.previousSupplyAt ?? null,
     minRepeatIntervalDays: drug.minRepeatDays ?? undefined,
   });
 }
+
+/** The other items on an intake, as seen from item `index`. */
+export const othersOnIntake = <T extends { brandName: string; strength: string; ingredient: string; drugClass: string | null }>(drugs: readonly T[], index: number) =>
+  drugs.filter((_, i) => i !== index).map(safetyDrug);
 
 export interface QuoteInput {
   tenantId: string;

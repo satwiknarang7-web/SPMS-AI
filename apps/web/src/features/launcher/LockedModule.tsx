@@ -2,7 +2,7 @@
 
 import { type ModuleKey, MODULES } from '@segue/shared';
 import { Check, Lock, Mail } from 'lucide-react';
-import { accentStyle, PageBody } from '@/components/layout/AppShell';
+import { PageBody } from '@/components/layout/AppShell';
 import { ProductMark } from '@/components/layout/Brand';
 import { Button, Card } from '@/components/ui';
 import { useSession } from '@/features/auth/session';
@@ -21,10 +21,10 @@ export function LockedModule({ module }: { module: ModuleKey }) {
   const ui = MODULE_UI[module];
   const sub = session?.subscriptions.find((s) => s.module === module);
   return (
-    <div style={accentStyle(ui.color)}>
+    <div>
       <PageBody>
         <Card className="mx-auto max-w-3xl overflow-hidden" padded={false}>
-          <div className="bg-[var(--accent-soft)] px-10 py-10">
+          <div className="px-10 py-10" style={{ background: `linear-gradient(135deg, color-mix(in srgb, ${ui.color} 9%, white), white 70%)` }}>
             <div className="flex items-start justify-between gap-4">
               <ProductMark module={ui.label} color={ui.color} size="lg" />
               <span className="inline-flex items-center gap-1.5 rounded-full bg-white px-3 py-1 text-xs font-semibold text-ink-700 shadow-sm">
@@ -33,11 +33,11 @@ export function LockedModule({ module }: { module: ModuleKey }) {
             </div>
             <p className="mt-6 max-w-xl text-lg text-ink-700">{MODULES[module].tagline}</p>
           </div>
-          <div className="grid gap-8 px-10 py-8 md:grid-cols-[1fr_auto]">
+          <div className="grid gap-8 border-t border-[var(--line)] px-10 py-8 md:grid-cols-[1fr_auto]">
             <ul className="space-y-2.5">
               {HIGHLIGHTS[module].map((h) => (
                 <li key={h} className="flex items-start gap-2.5 text-sm text-ink-700">
-                  <span className="mt-0.5 grid size-5 shrink-0 place-items-center rounded-full bg-[var(--accent-soft)] text-[var(--accent)]">
+                  <span className="mt-0.5 grid size-5 shrink-0 place-items-center rounded-full" style={{ background: `color-mix(in srgb, ${ui.color} 12%, white)`, color: ui.color }}>
                     <Check className="size-3" />
                   </span>
                   {h}

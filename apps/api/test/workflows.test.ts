@@ -63,6 +63,57 @@ describe('UAT: dispense an electronic prescription with a safety check', () => {
   });
 });
 
+describe('UAT: multi-item paper script', () => {
+  it('prices and checks items against each other, then creates linked scripts atomically', async () => {
+    const rx = await login('pharmacist@harbourside.demo');
+    const tenantId = (await prisma.user.findFirstOrThrow({ where: { email: 'pharmacist@harbourside.demo' } })).tenantId!;
+    // A patient with no dispensing history, so any interaction must come from the intake itself.
+    const patient = await prisma.patient.create({ data: { tenantId, firstName: 'Batch', lastName: 'Tester', dob: new Date('1970-01-01'), concessionType: 'GENERAL' } });
+    const prescriber = await prisma.prescriber.findFirstOrThrow({ where: { tenantId } });
+    const packFor = async (q: string) => {
+      const res = await rx.get(`/api/dispense/drugs?q=${q}`);
+      return res.body[0].items.find((i: { onHand: number; productId: string | null }) => i.onHand > 0 && i.productId) ?? res.body[0].items[0];
+    };
+    const [sertraline, tramadol, metformin] = await Promise.all([packFor('Sertraline'), packFor('Tramadol'), packFor('Metformin')]);
+    const item = (p: { drugId: string; productId: string }, quantity: number) => ({
+      prescriberId: prescriber.id, drugId: p.drugId, productId: p.productId, scriptType: 'PBS', source: 'PAPER', erxToken: null,
+      prescribedDate: new Date().toISOString(), directions: 'Take ONE daily', quantity, repeatsTotal: 1, brandSubstitution: true,
+    });
+
+    const quote = await rx.post('/api/dispense/scripts/quote-batch', {
+      patientId: patient.id,
+      items: [sertraline, tramadol, metformin].map((p) => ({ drugId: p.drugId, productId: p.productId, scriptType: 'PBS', quantity: 20 })),
+    });
+    expect(quote.status).toBe(200);
+    expect(quote.body.requiresIntervention).toBe(true);
+    expect(quote.body.items[1].alerts[0]).toMatchObject({ type: 'INTERACTION', severity: 'HIGH' });
+    expect(quote.body.items[1].alerts[0].title).toMatch(/on this intake/);
+    expect(quote.body.items[2].alerts).toHaveLength(0);
+    expect(quote.body.totalPatientPrice).toBe(quote.body.items.reduce((s: number, i: { price: { patientPrice: number } }) => s + i.price.patientPrice, 0));
+
+    // One bad item rejects the whole intake — nothing is created.
+    const before = await prisma.prescription.count({ where: { patientId: patient.id } });
+    const bad = await rx.post('/api/dispense/scripts/batch', { patientId: patient.id, items: [item(sertraline, 30), { ...item(tramadol, 20), productId: metformin.productId }] });
+    expect(bad.status).toBe(400);
+    expect(bad.body.error.message).toMatch(/^Item 2:/);
+    expect(await prisma.prescription.count({ where: { patientId: patient.id } })).toBe(before);
+
+    const created = await rx.post('/api/dispense/scripts/batch', { patientId: patient.id, submit: true, items: [item(sertraline, 30), item(tramadol, 20), item(metformin, 100)] });
+    expect(created.status).toBe(200);
+    expect(created.body.scripts).toHaveLength(3);
+    expect(created.body.scripts.every((s: { status: string }) => s.status === 'AWAITING_CHECK')).toBe(true);
+
+    const detail = await rx.get(`/api/dispense/scripts/${created.body.scripts[1].id}`);
+    expect(detail.body.batch.map((b: { id: string }) => b.id).sort()).toEqual(created.body.scripts.map((s: { id: string }) => s.id).sort());
+    expect(detail.body.alerts[0]).toMatchObject({ type: 'INTERACTION', severity: 'HIGH' });
+
+    // The final check still sees the undispensed sibling and demands an intervention.
+    const check = await rx.post(`/api/dispense/scripts/${created.body.scripts[1].id}/check`, { scannedBarcode: tramadol.barcode });
+    expect(check.status).toBe(422);
+    expect(check.body.error.message).toMatch(/intervention/i);
+  });
+});
+
 describe('UAT: mixed-cart retail sale', () => {
   it('sells a ready script and a retail item, surcharges only the non-PBS portion, and reconciles stock and payment', async () => {
     const pos = await login('cashier@harbourside.demo');

@@ -62,7 +62,7 @@ export function StoreConfig() {
             <CardHeader title="Dispense pricing in effect" subtitle="Winning rule per condition after precedence" icon={<Store />} />
             <div className="space-y-4">
               {data.pricing.map((p) => (
-                <div key={p.condition} className="rounded-xl ring-1 ring-ink-200">
+                <div key={p.condition} className="rounded-xl ring-1 ring-[var(--line)]">
                   <div className="flex items-center justify-between border-b border-ink-100 px-4 py-2.5">
                     <Badge tone="blue">{p.condition}</Badge>
                     {p.winner ? <span className="text-sm text-ink-700"><strong>{p.winner.name}</strong> <span className="text-ink-500">from {p.winner.groupName}</span></span> : <span className="text-sm text-ink-500">No HQ rule — store defaults apply</span>}

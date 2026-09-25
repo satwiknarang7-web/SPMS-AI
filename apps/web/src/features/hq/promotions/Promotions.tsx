@@ -82,7 +82,7 @@ export function PromotionDialog({ open, onClose }: { open: boolean; onClose: () 
         </div>
         <div>
           <Field label="Products"><SearchInput value={q} onChange={setQ} placeholder="Search front-shop products" /></Field>
-          <div className="mt-1 max-h-48 overflow-y-auto rounded-lg ring-1 ring-ink-200">
+          <div className="mt-1 max-h-48 overflow-y-auto rounded-lg ring-1 ring-[var(--line)]">
             {catalogue.data?.map((p) => <button key={p.id} onClick={() => setProductIds((x) => (x.some((y) => y.id === p.id) ? x : [...x, p]))} className="flex w-full justify-between px-3 py-1.5 text-left text-sm hover:bg-ink-50"><span className="truncate">{p.name}</span><span className="text-ink-500">{money(p.retailPrice)}</span></button>)}
           </div>
           <div className="mt-3 flex flex-wrap gap-1.5">{productIds.map((p) => <button key={p.id} onClick={() => setProductIds((x) => x.filter((y) => y.id !== p.id))}><Badge tone="accent">{p.name} ×</Badge></button>)}</div>

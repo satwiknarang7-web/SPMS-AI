@@ -6,7 +6,6 @@ import { useRouter, useSearchParams } from 'next/navigation';
 import { useEffect, useState, type FormEvent } from 'react';
 import { useSession } from '@/features/auth/session';
 import { MODULE_UI } from '@/lib/modules';
-import { accentStyle } from '@/components/layout/AppShell';
 import { ProductMark } from '@/components/layout/Brand';
 import { Alert, Button, Field, Input, Loading } from '@/components/ui';
 import { errorMessage } from '@/lib/api';
@@ -53,24 +52,25 @@ export function LoginPage() {
   };
 
   return (
-    <div className="grid min-h-full lg:grid-cols-[1.1fr_1fr]" style={accentStyle('#7c4dbd')}>
-      <div className="relative hidden overflow-hidden bg-ink-950 p-12 text-white lg:flex lg:flex-col">
-        <div className="absolute -top-40 -right-40 size-[520px] rounded-full bg-[radial-gradient(circle,rgba(124,77,189,0.35),transparent_65%)]" />
-        <div className="absolute -bottom-48 -left-24 size-[520px] rounded-full bg-[radial-gradient(circle,rgba(10,120,194,0.3),transparent_65%)]" />
-        <div className="relative">
-          <ProductMark inverted size="lg" />
+    <div className="grid min-h-full lg:grid-cols-[1.1fr_1fr]">
+      <div className="relative m-3 hidden overflow-hidden rounded-[28px] bg-[linear-gradient(150deg,#0f172a_0%,#123a4a_55%,#0f766e_100%)] p-12 text-white lg:flex lg:flex-col">
+        <div className="absolute -top-40 -right-40 size-[520px] rounded-full bg-[radial-gradient(circle,rgba(99,102,241,0.35),transparent_65%)]" />
+        <div className="absolute -bottom-48 -left-24 size-[520px] rounded-full bg-[radial-gradient(circle,rgba(20,168,149,0.35),transparent_65%)]" />
+        <div className="relative flex items-center gap-3">
+          <span className="font-display text-xl font-extrabold tracking-tight">SEGUE</span>
+          <span className="rounded-md bg-white/15 px-1.5 py-px text-[10px] font-bold">Rx</span>
         </div>
         <div className="relative mt-auto max-w-lg">
-          <h1 className="text-4xl leading-tight font-bold tracking-tight">One connected platform for the modern Australian pharmacy.</h1>
-          <p className="mt-4 text-ink-300">Dispensing, retail, store operations and head office — sharing one product, inventory and pricing model, licensed module by module.</p>
+          <h1 className="text-[40px] leading-[1.1] font-extrabold">One connected platform for the modern Australian pharmacy.</h1>
+          <p className="mt-4 text-[15px] leading-relaxed text-white/70">Dispensing, retail, store operations and head office — sharing one product, inventory and pricing model, licensed module by module.</p>
           <div className="mt-10 grid grid-cols-2 gap-3">
             {MODULE_KEYS.map((k) => (
-              <div key={k} className="rounded-xl bg-white/5 p-3.5 ring-1 ring-white/10">
-                <ProductMark module={MODULE_UI[k].label} color={MODULE_UI[k].color} size="sm" inverted />
+              <div key={k} className="rounded-2xl bg-white/[0.07] p-4 ring-1 ring-white/10 backdrop-blur">
+                <ProductMark module={MODULE_UI[k].label} color={MODULE_UI[k].color === '#0f172a' ? '#94a3b8' : MODULE_UI[k].color} size="sm" inverted />
               </div>
             ))}
           </div>
-          <div className="mt-10 flex items-center gap-2 text-xs text-ink-400">
+          <div className="mt-10 flex items-center gap-2 text-xs text-white/60">
             <ShieldCheck className="size-4" /> Data hosted in Australia · Privacy Act 1988 (APPs) · Tamper-evident audit trail
           </div>
         </div>
@@ -81,7 +81,11 @@ export function LoginPage() {
           <div className="mb-8 lg:hidden">
             <ProductMark size="md" />
           </div>
-          <h2 className="text-2xl font-bold tracking-tight text-ink-900">Sign in</h2>
+          <div className="mb-1.5 flex items-center gap-2 text-ink-500">
+            <span className="size-1.5 rounded-full bg-primary-500" />
+            <span className="eyebrow">Secure sign-in</span>
+          </div>
+          <h2 className="text-[28px] font-extrabold text-ink-900">Welcome back</h2>
           <p className="mt-1 text-sm text-ink-500">Use your Segue account. Your organisation's licence decides which workspaces you can open.</p>
           <form onSubmit={submit} className="mt-8 space-y-4">
             {error && <Alert tone="red">{error}</Alert>}
@@ -96,8 +100,8 @@ export function LoginPage() {
             </Button>
           </form>
 
-          <div className="mt-10 rounded-2xl bg-white p-4 ring-1 ring-ink-200">
-            <div className="text-xs font-semibold tracking-wider text-ink-500 uppercase">Demo accounts</div>
+          <div className="mt-10 rounded-[var(--radius-card)] border border-[var(--line)] bg-white p-4 shadow-[var(--shadow-card)]">
+            <div className="eyebrow text-ink-500">Demo accounts</div>
             <p className="mt-1 text-xs text-ink-500">
               Password for all: <code className="rounded bg-ink-100 px-1 py-0.5 font-mono text-ink-700">Segue2026!</code>
             </p>
@@ -110,7 +114,7 @@ export function LoginPage() {
                     setEmail(e);
                     setPassword('Segue2026!');
                   }}
-                  className="flex w-full items-center justify-between rounded-lg px-2 py-1.5 text-left text-xs hover:bg-ink-50"
+                  className="flex w-full items-center justify-between rounded-lg px-2 py-1.5 text-left text-xs hover:bg-tertiary-50/60"
                 >
                   <span className="font-medium text-ink-800">{label}</span>
                   <span className="truncate pl-2 text-ink-400">{e}</span>

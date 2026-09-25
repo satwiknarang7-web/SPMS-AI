@@ -374,6 +374,8 @@ model Prescription {
   /// 0 = original supply, n = nth repeat. Each supply is its own record linked to the original.
   supplyNo          Int                      @default(0)
   originalId        String?
+  /// Items received together on one intake (e.g. a multi-item paper script) share a batch id.
+  batchId           String?
   brandSubstitution Boolean                  @default(true) // false = "brand substitution not permitted"
   status            String // RECEIVED | IN_PROGRESS | AWAITING_CHECK | READY | COLLECTED | DEFERRED | CANCELLED
   patientPrice      Int?
@@ -393,6 +395,7 @@ model Prescription {
 
   @@unique([storeId, number])
   @@index([storeId, status])
+  @@index([batchId])
 }
 
 model ClinicalIntervention {

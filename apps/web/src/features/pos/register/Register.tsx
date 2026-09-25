@@ -288,7 +288,7 @@ export function ReadyScripts({ onPick, inCart }: { onPick: (id: string) => void;
           {data.map((s) => {
             const added = inCart.includes(s.id);
             return (
-              <button key={s.id} disabled={added} onClick={() => onPick(s.id)} className={cn('flex items-center gap-3 rounded-xl bg-white p-3 text-left ring-1 ring-ink-200 hover:ring-[var(--accent)]', added && 'opacity-50')}>
+              <button key={s.id} disabled={added} onClick={() => onPick(s.id)} className={cn('flex items-center gap-3 rounded-xl bg-white p-3 text-left ring-1 ring-[var(--line)] hover:ring-[var(--accent)]', added && 'opacity-50')}>
                 <span className="grid size-10 place-items-center rounded-xl bg-sky-50 text-sky-600"><Pill className="size-5" /></span>
                 <span className="min-w-0 flex-1">
                   <span className="block truncate font-semibold text-ink-900">{s.patient.lastName.toUpperCase()}, {s.patient.firstName}</span>
@@ -316,13 +316,13 @@ export function ProductSearch({ initial, onPick }: { initial: string; onPick: (i
       {isFetching && !data && <Spinner />}
       <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-3">
         {data?.filter((p) => p.category !== 'Prescription').map((p) => (
-          <button key={p.id} onClick={() => onPick(p.id)} className="rounded-xl bg-white p-3 text-left ring-1 ring-ink-200 hover:ring-[var(--accent)]">
+          <button key={p.id} onClick={() => onPick(p.id)} className="rounded-xl bg-white p-3 text-left ring-1 ring-[var(--line)] hover:ring-[var(--accent)]">
             <div className="line-clamp-2 text-sm font-medium text-ink-900">{p.name}</div>
             <div className="mt-1.5 flex items-center justify-between text-xs">
               <span className="text-ink-500">{p.onHand} in stock</span>
               <span className="text-right">
                 {p.promotion ? (
-                  <><span className="mr-1 text-ink-400 line-through">{money(p.retailPrice)}</span><span className="font-semibold text-violet-700">{money(p.promotion.price)}</span></>
+                  <><span className="mr-1 text-ink-400 line-through">{money(p.retailPrice)}</span><span className="font-semibold text-tertiary-600">{money(p.promotion.price)}</span></>
                 ) : (
                   <span className="font-semibold text-ink-900">{money(p.retailPrice)}</span>
                 )}
@@ -397,10 +397,10 @@ export function TenderDialog({ quote, customer, shiftId, cart, onClose, onDone }
     >
       <div className="grid gap-6 md:grid-cols-[1fr_260px]">
         <div>
-          <div className="rounded-2xl bg-ink-950 p-5 text-white">
-            <div className="text-sm text-ink-400">{remaining > 0 ? 'Remaining' : change > 0 ? 'Change due' : 'Paid in full'}</div>
-            <div className="text-4xl font-bold tracking-tight tnum">{money(remaining > 0 ? remaining : change)}</div>
-            <div className="mt-2 text-xs text-ink-400">Goods total {money(total)}{surcharge > 0 && ` · card surcharge ${money(surcharge)} (${quote.surchargePct}% on non-PBS card portion)`}</div>
+          <div className="rounded-2xl bg-[linear-gradient(135deg,#0f766e,#115e59)] p-5 text-white">
+            <div className="text-sm text-white/70">{remaining > 0 ? 'Remaining' : change > 0 ? 'Change due' : 'Paid in full'}</div>
+            <div className="font-display text-4xl font-extrabold tnum">{money(remaining > 0 ? remaining : change)}</div>
+            <div className="mt-2 text-xs text-white/70">Goods total {money(total)}{surcharge > 0 && ` · card surcharge ${money(surcharge)} (${quote.surchargePct}% on non-PBS card portion)`}</div>
           </div>
           <Field label="Amount" className="mt-4">
             <Input value={amount} onChange={(e) => setAmount(e.target.value)} inputMode="decimal" className="[&_input]:h-12 [&_input]:text-lg" />
@@ -482,7 +482,7 @@ export function CustomerDialog({ open, onClose, onPick }: { open: boolean; onClo
             <SearchInput value={q} onChange={setQ} placeholder="Name, mobile or loyalty number" className="flex-1" />
             <Button onClick={() => setCreating(true)}>New</Button>
           </div>
-          <ul className="mt-3 max-h-80 divide-y divide-ink-100 overflow-y-auto rounded-xl ring-1 ring-ink-200">
+          <ul className="mt-3 max-h-80 divide-y divide-ink-100 overflow-y-auto rounded-xl ring-1 ring-[var(--line)]">
             <li><button onClick={() => onPick(null)} className="w-full px-4 py-2.5 text-left text-sm text-ink-500 hover:bg-ink-50">Walk-in customer</button></li>
             {data?.map((c) => (
               <li key={c.id}>

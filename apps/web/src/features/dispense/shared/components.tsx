@@ -48,14 +48,20 @@ export function PatientSummary({ patient, onClear }: { patient: Patient; onClear
   const allergies = parseAllergies(patient);
   const alerts = parseAlerts(patient);
   return (
-    <div className="rounded-xl bg-ink-50 p-4 ring-1 ring-ink-200/70">
+    <div className="rounded-2xl border border-[var(--line)] bg-ink-50/60 p-4">
       <div className="flex items-start justify-between gap-3">
-        <div>
-          <div className="text-base font-semibold text-ink-900">
-            {patient.lastName.toUpperCase()}, {patient.firstName}
-          </div>
-          <div className="mt-0.5 text-xs text-ink-500">
-            {date(patient.dob)} · {age(patient.dob)} yrs {patient.medicareNo && <>· Medicare {patient.medicareNo}</>}
+        <div className="flex items-center gap-3">
+          <span className="grid size-11 shrink-0 place-items-center rounded-full bg-secondary-100 text-sm font-bold text-secondary-700">
+            {patient.firstName[0]}
+            {patient.lastName[0]}
+          </span>
+          <div>
+            <div className="font-display text-base font-bold text-ink-900">
+              {patient.lastName.toUpperCase()}, {patient.firstName}
+            </div>
+            <div className="mt-0.5 text-xs text-ink-500">
+              {date(patient.dob)} · {age(patient.dob)} yrs {patient.medicareNo && <>· Medicare {patient.medicareNo}</>}
+            </div>
           </div>
         </div>
         <div className="flex items-center gap-2">
@@ -67,17 +73,14 @@ export function PatientSummary({ patient, onClear }: { patient: Patient; onClear
           )}
         </div>
       </div>
+      {allergies.length > 0 && (
+        <div className="mt-3 rounded-xl border border-rose-200 bg-rose-50 px-3.5 py-2.5 text-sm text-rose-800">
+          <span className="eyebrow mr-2 text-rose-700">Allergies</span>
+          {allergies.map((a) => `${a.substance}${a.reaction ? ` (${a.reaction})` : ''}`).join(' · ')}
+        </div>
+      )}
       <div className="mt-3 flex flex-wrap gap-1.5">
-        {allergies.length === 0 ? (
-          <Badge tone="green">No known allergies</Badge>
-        ) : (
-          allergies.map((a) => (
-            <Badge key={a.substance} tone="red">
-              Allergy: {a.substance}
-              {a.reaction ? ` (${a.reaction})` : ''}
-            </Badge>
-          ))
-        )}
+        {allergies.length === 0 && <Badge tone="green">No known allergies</Badge>}
         {alerts.map((a) => (
           <Badge key={a} tone="amber">{a}</Badge>
         ))}

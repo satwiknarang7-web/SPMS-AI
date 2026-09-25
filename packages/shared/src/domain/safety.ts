@@ -44,10 +44,19 @@ export interface CurrentMedication {
   lastDispensedAt: Date | string;
 }
 
+/** Another medicine being prepared for the same patient right now (e.g. an item on the same intake). */
+export interface ConcurrentMedication {
+  name: string;
+  ingredient: string;
+  drugClass: string | null;
+}
+
 export interface SafetyInput {
   drug: SafetyDrug;
   allergies: readonly PatientAllergy[];
   currentMedications: readonly CurrentMedication[];
+  /** Undispensed items prepared alongside this one — checked for interactions and duplication too. */
+  concurrentMedications?: readonly ConcurrentMedication[];
   interactions: readonly InteractionRule[];
   patientAlerts?: readonly string[];
   /** When this script's previous supply was dispensed, for early-repeat detection. */
@@ -80,8 +89,10 @@ export function runSafetyChecks(input: SafetyInput): SafetyAlert[] {
   }
 
   const seenInteractions = new Set<string>();
-  for (const med of input.currentMedications) {
+  const seenDuplicates = new Set<string>();
+  const compare = (med: ConcurrentMedication, concurrent: boolean) => {
     const medIngredient = norm(med.ingredient);
+    const suffix = concurrent ? ' (on this intake)' : '';
     for (const rule of input.interactions) {
       const a = norm(rule.ingredientA);
       const b = norm(rule.ingredientB);
@@ -92,27 +103,34 @@ export function runSafetyChecks(input: SafetyInput): SafetyAlert[] {
         alerts.push({
           type: 'INTERACTION',
           severity: rule.severity,
-          title: `Interaction with ${med.name}`,
+          title: `Interaction with ${med.name}${suffix}`,
           detail: rule.description,
         });
       }
     }
+    if (seenDuplicates.has(medIngredient)) return;
     if (medIngredient === ingredient) {
+      seenDuplicates.add(medIngredient);
       alerts.push({
         type: 'DUPLICATE_THERAPY',
         severity: 'MODERATE',
-        title: `Duplicate therapy: ${med.name}`,
-        detail: `Patient is already taking ${med.name} (same active ingredient).`,
+        title: `Duplicate therapy: ${med.name}${suffix}`,
+        detail: concurrent
+          ? `${med.name} is also being dispensed on this intake (same active ingredient).`
+          : `Patient is already taking ${med.name} (same active ingredient).`,
       });
     } else if (drugClass && norm(med.drugClass) === drugClass) {
+      seenDuplicates.add(medIngredient);
       alerts.push({
         type: 'DUPLICATE_THERAPY',
         severity: 'LOW',
-        title: `Same therapeutic class: ${med.name}`,
+        title: `Same therapeutic class: ${med.name}${suffix}`,
         detail: `${med.name} is also in the ${drug.drugClass} class. Confirm this is intended.`,
       });
     }
-  }
+  };
+  for (const med of input.currentMedications) compare(med, false);
+  for (const med of input.concurrentMedications ?? []) compare(med, true);
 
   if (drug.schedule === 'S8') {
     alerts.push({

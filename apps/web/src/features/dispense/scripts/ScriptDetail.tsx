@@ -2,14 +2,15 @@
 
 import type { SafetyAlert } from '@segue/shared';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { ArrowLeft, CheckCircle2, ClipboardCheck, Clock, PauseCircle, Printer, Repeat, ScanLine, Send, ShieldCheck, XCircle } from 'lucide-react';
+import { ArrowLeft, ArrowRight, CheckCircle2, ClipboardCheck, Clock, FileText, History, Layers, PauseCircle, Printer, Receipt, Repeat, ScanLine, Send, ShieldCheck, Stethoscope, XCircle } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import Link from 'next/link';
 import { useRouter, useParams } from 'next/navigation';
+import { toast } from 'sonner';
 import { useUrlSearchParams } from '@/lib/navigation';
 import { PageBody } from '@/components/layout/AppShell';
-import { Alert, Badge, Button, Card, CardHeader, ConfirmDialog, DescriptionList, Dialog, Field, Input, Loading, NotFound, PageHeader, Select, StatusBadge, Textarea } from '@/components/ui';
+import { Alert, Badge, Button, Card, CardHeader, ConfirmDialog, DescriptionList, Dialog, Field, Input, Loading, NotFound, PageHeader, SectionLabel, Select, StatusBadge, Textarea } from '@/components/ui';
 import { useSession } from '@/features/auth/session';
 import { DispenseLabel } from '@/features/dispense/scripts/DispenseLabel';
 import { PatientSummary, SafetyAlertList } from '@/features/dispense/shared/components';
@@ -50,6 +51,8 @@ export interface ScriptDetailData {
   checkedBy: string | null;
   store: { name: string; suburb: string; state: string } | null;
   supplies: { id: string; number: string; supplyNo: number; status: string; dispensedAt: string | null }[];
+  /** Every script received on the same multi-item intake (empty for a single item). */
+  batch: { id: string; number: string; status: string; drug: { brandName: string; strength: string } }[];
   auditTrail: { id: string; action: string; summary: string; userName: string | null; createdAt: string; hash: string }[];
 }
 
@@ -92,7 +95,9 @@ export function ScriptDetail() {
   return (
     <PageBody wide>
       <PageHeader
-        back={<Link href="/dispense/scripts" className="inline-flex items-center gap-1 text-sm text-ink-500 hover:text-ink-800"><ArrowLeft className="size-4" /> Script queue</Link>}
+        back={<Link href="/dispense/scripts" className="inline-flex items-center gap-1 text-sm font-medium text-ink-500 hover:text-ink-800"><ArrowLeft className="size-4" /> Script queue</Link>}
+        eyebrow={`Script ${s.number}`}
+        eyebrowTone="secondary"
         title={<span className="flex items-center gap-3">{s.drug.brandName} {s.drug.strength}<StatusBadge status={s.status} label={SCRIPT_STATUS_LABEL[s.status]} /></span>}
         subtitle={<span className="font-mono">{s.number}{s.supplyNo > 0 && ` · repeat ${s.supplyNo} of ${s.repeatsTotal}`}</span>}
         actions={
@@ -116,14 +121,19 @@ export function ScriptDetail() {
       <div className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_380px]">
         <div className="space-y-6">
           <Card>
-            <CardHeader title="Patient" />
+            <SectionLabel
+              action={
+                <Link href={`/dispense/patients/${s.patient.id}`} className="inline-flex items-center gap-1 text-sm font-semibold text-primary-700 hover:text-primary-800">
+                  Open patient record <ArrowRight className="size-3.5" />
+                </Link>
+              }
+            >
+              Patient information
+            </SectionLabel>
             <PatientSummary patient={s.patient as Patient} />
-            <div className="mt-3 text-right">
-              <Link href={`/dispense/patients/${s.patient.id}`} className="text-sm font-medium text-[var(--accent)]">Open patient record →</Link>
-            </div>
           </Card>
           <Card>
-            <CardHeader title="Prescription" />
+            <CardHeader title="Prescription" icon={<FileText />} />
             <DescriptionList
               columns={3}
               items={[
@@ -138,22 +148,22 @@ export function ScriptDetail() {
                 { label: 'Source', value: s.source === 'PAPER' ? 'Paper' : `eRx ${s.erxToken ?? ''}` },
               ]}
             />
-            <div className="mt-4 rounded-xl bg-ink-50 px-4 py-3">
-              <div className="text-xs font-medium text-ink-500">Directions</div>
+            <div className="mt-5 rounded-xl border border-secondary-100 bg-secondary-50/60 px-4 py-3">
+              <div className="eyebrow text-secondary-700">Directions</div>
               <div className="mt-0.5 font-semibold text-ink-900 uppercase">{s.directions}</div>
             </div>
             {!s.brandSubstitution && <Alert className="mt-3" tone="amber">Brand substitution not permitted by the prescriber.</Alert>}
           </Card>
 
           <Card>
-            <CardHeader title="Clinical safety" subtitle={dispensed ? 'Alerts at the time of the final check' : 'Re-checked when the pharmacist performs the final check'} />
+            <CardHeader title="Clinical safety" icon={<ShieldCheck />} subtitle={dispensed ? 'Alerts at the time of the final check' : 'Re-checked when the pharmacist performs the final check'} />
             <SafetyAlertList alerts={s.alerts} />
             {s.interventions.length > 0 && (
               <div className="mt-4">
                 <div className="mb-2 text-[13px] font-semibold text-ink-700">Interventions recorded</div>
                 <ul className="space-y-2">
                   {s.interventions.map((i) => (
-                    <li key={i.id} className="rounded-xl bg-ink-50 p-3 text-sm ring-1 ring-ink-200/70">
+                    <li key={i.id} className="rounded-xl border border-[var(--line)] bg-ink-50/60 p-3 text-sm">
                       <div className="flex items-center gap-2 font-medium text-ink-800"><ShieldCheck className="size-4 text-emerald-600" /> {i.alertType.replace(/_/g, ' ').toLowerCase()} — {i.outcome.replace(/_/g, ' ').toLowerCase()}</div>
                       <div className="mt-1 text-ink-600">{i.note}</div>
                       <div className="mt-1 text-xs text-ink-400">{dateTime(i.createdAt)}</div>
@@ -167,17 +177,19 @@ export function ScriptDetail() {
 
         <div className="space-y-6">
           <Card>
-            <CardHeader title="Pricing" />
-            <div className="text-xs text-ink-500">Patient pays</div>
-            <div className="text-3xl font-bold tracking-tight text-ink-900 tnum">{money(s.patientPrice)}</div>
-            <dl className="mt-3 space-y-1.5 text-sm">
-              <div className="flex justify-between"><dt className="text-ink-500">Basis</dt><dd className="text-right text-ink-800">{s.pricingBasis}</dd></div>
-              <div className="flex justify-between"><dt className="text-ink-500">Government</dt><dd className="tnum">{money(s.governmentContribution)}</dd></div>
-              <div className="flex justify-between"><dt className="text-ink-500">Safety net</dt><dd className="tnum">{money(s.safetyNetContribution)}</dd></div>
+            <CardHeader title="Pricing" icon={<Receipt />} actions={<Badge tone="blue">{s.scriptType}</Badge>} />
+            <div className="rounded-2xl bg-[linear-gradient(135deg,#0f766e,#115e59)] px-5 py-4 text-white">
+              <div className="eyebrow text-white/70">Patient pays</div>
+              <div className="font-display text-[36px] leading-tight font-extrabold tnum">{money(s.patientPrice)}</div>
+            </div>
+            <dl className="mt-4 divide-y divide-ink-100 text-sm">
+              <div className="flex justify-between py-2"><dt className="text-ink-500">Basis</dt><dd className="text-right font-semibold text-ink-900">{s.pricingBasis}</dd></div>
+              <div className="flex justify-between py-2"><dt className="text-ink-500">Government</dt><dd className="font-semibold text-ink-900 tnum">{money(s.governmentContribution)}</dd></div>
+              <div className="flex justify-between pt-2"><dt className="text-ink-500">Safety net</dt><dd className="font-semibold text-ink-900 tnum">{money(s.safetyNetContribution)}</dd></div>
             </dl>
           </Card>
           <Card>
-            <CardHeader title="Dispensing record" />
+            <CardHeader title="Dispensing record" icon={<Stethoscope />} />
             <DescriptionList
               columns={1}
               items={[
@@ -188,9 +200,27 @@ export function ScriptDetail() {
               ]}
             />
           </Card>
+          {s.batch.length > 1 && (
+            <Card>
+              <CardHeader title="Items on this intake" subtitle={`${s.batch.filter((b) => ['READY', 'COLLECTED'].includes(b.status)).length} of ${s.batch.length} dispensed`} icon={<Layers />} />
+              <ul className="space-y-1.5 text-sm">
+                {s.batch.map((x, idx) => (
+                  <li key={x.id}>
+                    <Link href={`/dispense/scripts/${x.id}`} className={cn('flex items-center justify-between gap-3 rounded-xl px-2.5 py-2 hover:bg-ink-50', x.id === s.id && 'bg-[var(--accent-soft)]')}>
+                      <span className="min-w-0">
+                        <span className="block truncate font-medium text-ink-900">{idx + 1}. {x.drug.brandName} {x.drug.strength}</span>
+                        <span className="block font-mono text-xs text-ink-500">{x.number}</span>
+                      </span>
+                      <StatusBadge status={x.status} label={SCRIPT_STATUS_LABEL[x.status]} />
+                    </Link>
+                  </li>
+                ))}
+              </ul>
+            </Card>
+          )}
           {s.supplies.length > 1 && (
             <Card>
-              <CardHeader title="Supplies on this prescription" />
+              <CardHeader title="Supplies on this prescription" icon={<Repeat />} />
               <ul className="space-y-1.5 text-sm">
                 {s.supplies.map((x) => (
                   <li key={x.id}>
@@ -204,12 +234,12 @@ export function ScriptDetail() {
             </Card>
           )}
           <Card>
-            <CardHeader title="Script audit" subtitle="Tamper-evident — every event is hash-chained" />
-            <ol className="relative space-y-4 border-l border-ink-200 pl-5">
+            <CardHeader title="Script audit" subtitle="Tamper-evident — every event is hash-chained" icon={<History />} />
+            <ol className="relative space-y-4 border-l-2 border-tertiary-100 pl-5">
               {s.auditTrail.map((e) => (
                 <li key={e.id} className="relative">
-                  <span className="absolute top-1 -left-[25px] size-2.5 rounded-full bg-[var(--accent)] ring-4 ring-white" />
-                  <div className="text-sm text-ink-800">{e.summary}</div>
+                  <span className="absolute top-1 -left-[27px] size-3 rounded-full bg-tertiary-600 ring-4 ring-white" />
+                  <div className="text-sm font-medium text-ink-800">{e.summary}</div>
                   <div className="mt-0.5 text-xs text-ink-500">{e.userName ?? 'System'} · {dateTime(e.createdAt)} · <span className="font-mono" title={e.hash}>#{e.hash.slice(0, 8)}</span></div>
                 </li>
               ))}
@@ -218,7 +248,13 @@ export function ScriptDetail() {
         </div>
       </div>
 
-      <FinalCheckDialog open={checkOpen} onClose={() => setCheckOpen(false)} script={s} onDone={() => { void qc.invalidateQueries({ queryKey: ['dispense'] }); setCheckOpen(false); setLabelOpen(true); }} />
+      <FinalCheckDialog open={checkOpen} onClose={() => setCheckOpen(false)} script={s} onDone={() => {
+          void qc.invalidateQueries({ queryKey: ['dispense'] });
+          setCheckOpen(false);
+          setLabelOpen(true);
+          const next = s.batch.find((b) => b.id !== s.id && ['IN_PROGRESS', 'AWAITING_CHECK'].includes(b.status));
+          if (next) toast(`Next on this intake: ${next.drug.brandName} ${next.drug.strength}`, { duration: 10_000, action: { label: 'Check next', onClick: () => router.push(`/dispense/scripts/${next.id}?check=1`) } });
+        }} />
       <LabelDialog open={labelOpen} onClose={() => setLabelOpen(false)} script={s} />
       <ConfirmDialog
         open={confirm !== null}
@@ -284,7 +320,7 @@ export function FinalCheckDialog({ open, onClose, script, onDone }: { open: bool
         </>
       }
     >
-      <div className="grid gap-3 rounded-xl bg-ink-50 p-4 text-sm sm:grid-cols-2">
+      <div className="grid gap-3 rounded-xl border border-[var(--line)] bg-ink-50/60 p-4 text-sm sm:grid-cols-2">
         <div><div className="text-xs text-ink-500">Patient</div><div className="font-semibold text-ink-900">{script.patient.lastName.toUpperCase()}, {script.patient.firstName}</div></div>
         <div><div className="text-xs text-ink-500">Medicine</div><div className="font-semibold text-ink-900">{script.product?.name}</div></div>
         <div><div className="text-xs text-ink-500">Quantity / repeats</div><div className="text-ink-900">{script.quantity} · {script.repeatsTotal - script.supplyNo} repeat(s) remaining</div></div>
@@ -295,7 +331,7 @@ export function FinalCheckDialog({ open, onClose, script, onDone }: { open: bool
       <div className="mt-5">
         <div className="mb-2 flex items-center justify-between">
           <span className="text-[13px] font-semibold text-ink-800">Scan check</span>
-          <button className="text-xs font-medium text-[var(--accent)]" onClick={() => { setManual((m) => !m); setTimeout(() => scanRef.current?.focus(), 30); }}>
+          <button className="text-xs font-semibold text-primary-700" onClick={() => { setManual((m) => !m); setTimeout(() => scanRef.current?.focus(), 30); }}>
             {manual ? 'Scan the pack instead' : "Can't scan? Verify manually"}
           </button>
         </div>

@@ -1,4 +1,5 @@
 import { SCRIPT_TYPES, requiresIntervention, type SafetyAlert } from '@segue/shared';
+import { randomUUID } from 'node:crypto';
 import type { FastifyInstance, FastifyRequest } from 'fastify';
 import { z } from 'zod';
 import { actorFrom, audit } from '../../../core/audit';
@@ -7,7 +8,7 @@ import { json, prisma, tx, type Db } from '../../../core/db';
 import { badRequest, conflict, notFound, parse, unprocessable } from '../../../core/errors';
 import { moveStock } from '../../../core/inventory';
 import { nextNumber } from '../../../core/store-config';
-import { priceFor, safetyFor } from '../shared/dispense.service';
+import { batchSiblings, othersOnIntake, priceFor, safetyFor } from '../shared/dispense.service';
 import { pickChanged } from '../shared/dispense.shared';
 
 const scriptFields = {
@@ -45,6 +46,23 @@ const quoteBody = z.object({
   scriptType: z.enum(SCRIPT_TYPES),
   quantity: z.number().int().positive(),
 });
+
+const MAX_INTAKE_ITEMS = 12;
+
+/** Several medicines received together for one patient; each still becomes its own script. */
+const batchQuoteBody = z.object({
+  patientId: z.string(),
+  items: z.array(quoteBody.omit({ patientId: true })).min(1).max(MAX_INTAKE_ITEMS),
+});
+
+const batchBody = z.object({
+  patientId: z.string(),
+  items: z.array(scriptBody.omit({ patientId: true })).min(1, 'Add at least one medicine').max(MAX_INTAKE_ITEMS),
+  /** Send every item straight to the pharmacist's check queue. */
+  submit: z.boolean().default(false),
+});
+
+type ScriptInput = z.infer<typeof scriptBody>;
 
 const checkBody = z.object({
   scannedBarcode: z.string().optional().nullable(),
@@ -92,51 +110,70 @@ export async function scriptsRoutes(app: FastifyInstance) {
     return { price, alerts, requiresIntervention: requiresIntervention(alerts) };
   });
 
-  app.post('/scripts', { preHandler: requirePermission('dispense.scripts.write') }, async (req) => {
+  app.post('/scripts/quote-batch', { preHandler: requirePermission('dispense.scripts.read') }, async (req) => {
     const tenantId = tenantOf(req);
     const storeId = storeOf(req);
+    const body = parse(batchQuoteBody, req.body);
+    const patient = await loadPatient(prisma, tenantId, body.patientId);
+    const drugs = await loadDrugs(prisma, tenantId, body.items.map((i) => i.drugId));
+    const items = await Promise.all(
+      body.items.map(async (item, idx) => {
+        const drug = drugs[idx]!;
+        const [price, alerts] = await Promise.all([
+          priceFor(prisma, { tenantId, storeId, patient, drug, productId: item.productId, scriptType: item.scriptType, quantity: item.quantity }),
+          safetyFor(prisma, patient, drug, { concurrent: othersOnIntake(drugs, idx) }),
+        ]);
+        return { drugId: drug.id, price, alerts, requiresIntervention: requiresIntervention(alerts) };
+      }),
+    );
+    return {
+      items,
+      totalPatientPrice: items.reduce((sum, i) => sum + i.price.patientPrice, 0),
+      requiresIntervention: items.some((i) => i.requiresIntervention),
+    };
+  });
+
+  app.post('/scripts', { preHandler: requirePermission('dispense.scripts.write') }, async (req) => {
+    const tenantId = tenantOf(req);
     const body = parse(scriptBody, req.body);
     const { patient, drug } = await loadPatientDrug(prisma, tenantId, body.patientId, body.drugId);
-    await assertPrescriber(tenantId, body.prescriberId);
-    validateAgainstDrug(body, drug);
-    if (body.productId) await assertProductForDrug(tenantId, body.productId, drug.id, body.brandSubstitution);
+    await validateScript(tenantId, body, drug);
+    return tx((db) => createScript(req, db, patient, drug, body, { batchId: null, concurrent: [] }));
+  });
 
-    return tx(async (db) => {
-      if (body.source !== 'PAPER') {
-        if (!body.erxToken) throw badRequest('An eRx token is required for electronic prescriptions');
-        const token = await db.erxToken.findFirst({ where: { tenantId, token: body.erxToken.toUpperCase() } });
-        if (!token) throw notFound('Electronic prescription token');
-        if (token.claimed) throw conflict('This token has already been dispensed');
-        await db.erxToken.update({ where: { token: token.token }, data: { claimed: true } });
+  /**
+   * Multi-item intake: creates one script per medicine in a single transaction (all or
+   * nothing), linked by a batch id and safety-checked against each other as well as the
+   * patient's history.
+   */
+  app.post('/scripts/batch', { preHandler: requirePermission('dispense.scripts.write') }, async (req) => {
+    const tenantId = tenantOf(req);
+    const body = parse(batchBody, req.body);
+    const patient = await loadPatient(prisma, tenantId, body.patientId);
+    const drugs = await loadDrugs(prisma, tenantId, body.items.map((i) => i.drugId));
+    const tokens = body.items.map((i) => i.erxToken?.toUpperCase()).filter((t): t is string => !!t);
+    if (new Set(tokens).size !== tokens.length) throw badRequest('The same eRx token appears more than once on this intake');
+    for (const [idx, item] of body.items.entries()) {
+      await validateScript(tenantId, { ...item, patientId: patient.id }, drugs[idx]!, `Item ${idx + 1}: `);
+    }
+    const batchId = body.items.length > 1 ? randomUUID() : null;
+    const scripts = await tx(async (db) => {
+      const created = [];
+      for (const [idx, item] of body.items.entries()) {
+        const script = await createScript(req, db, patient, drugs[idx]!, { ...item, patientId: patient.id }, { batchId, concurrent: othersOnIntake(drugs, idx) });
+        if (body.submit) {
+          if (!script.productId) throw unprocessable(`Item ${idx + 1}: select the pack to dispense before sending for check`);
+          await db.prescription.update({ where: { id: script.id }, data: { status: 'AWAITING_CHECK' } });
+          await audit(db, actorFrom(req), {
+            module: 'DISPENSE', action: 'script.submit', entityType: 'Prescription', entityId: script.id,
+            summary: `Script ${script.number} sent for pharmacist check`, before: { status: 'IN_PROGRESS' }, after: { status: 'AWAITING_CHECK' },
+          });
+        }
+        created.push({ id: script.id, number: script.number, status: body.submit ? 'AWAITING_CHECK' : script.status });
       }
-      const [price, alerts] = await Promise.all([
-        priceFor(db, { tenantId, storeId, patient, drug, productId: body.productId, scriptType: body.scriptType, quantity: body.quantity }),
-        safetyFor(db, patient, drug),
-      ]);
-      const number = await nextNumber(() => db.prescription.count({ where: { storeId } }), 'RX', 7);
-      const script = await db.prescription.create({
-        data: {
-          ...body,
-          erxToken: body.erxToken?.toUpperCase() ?? null,
-          tenantId,
-          storeId,
-          number,
-          status: 'IN_PROGRESS',
-          patientPrice: price.patientPrice,
-          governmentContribution: price.governmentContribution,
-          safetyNetContribution: price.safetyNetContribution,
-          pricingBasis: price.basis,
-          alerts: json.stringify(alerts),
-          preparedById: req.ctx.userId,
-        },
-      });
-      await audit(db, actorFrom(req), {
-        module: 'DISPENSE', action: 'script.create', entityType: 'Prescription', entityId: script.id,
-        summary: `Script ${number} created — ${drug.brandName} ${drug.strength} × ${body.quantity} (${body.source === 'PAPER' ? 'paper' : 'eRx'})`,
-        after: { status: script.status, patientPrice: price.patientPrice, alerts: alerts.map((a) => a.title) },
-      });
-      return script;
+      return created;
     });
+    return { batchId, scripts };
   });
 
   app.get<{ Params: { id: string } }>('/scripts/:id', { preHandler: requirePermission('dispense.scripts.read') }, async (req) => {
@@ -150,7 +187,16 @@ export async function scriptsRoutes(app: FastifyInstance) {
       }),
       prisma.user.findMany({ where: { id: { in: [script.preparedById, script.checkedById].filter((x): x is string => !!x) } }, select: { id: true, name: true } }),
     ]);
-    const store = await prisma.store.findUnique({ where: { id: script.storeId } });
+    const [store, batch] = await Promise.all([
+      prisma.store.findUnique({ where: { id: script.storeId } }),
+      script.batchId
+        ? prisma.prescription.findMany({
+            where: { batchId: script.batchId },
+            select: { id: true, number: true, status: true, drug: { select: { brandName: true, strength: true } } },
+            orderBy: { number: 'asc' },
+          })
+        : [],
+    ]);
     const name = (id: string | null) => users.find((u) => u.id === id)?.name ?? null;
     return {
       ...script,
@@ -160,6 +206,7 @@ export async function scriptsRoutes(app: FastifyInstance) {
       checkedBy: name(script.checkedById),
       store,
       supplies,
+      batch,
       auditTrail: trail,
     };
   });
@@ -180,7 +227,7 @@ export async function scriptsRoutes(app: FastifyInstance) {
     return tx(async (db) => {
       const [price, alerts] = await Promise.all([
         priceFor(db, { tenantId, storeId, patient, drug, productId: merged.productId, scriptType: merged.scriptType as 'PBS', quantity: merged.quantity }),
-        safetyFor(db, patient, drug, { excludeScriptId: existing.id }),
+        safetyFor(db, patient, drug, { excludeScriptId: existing.id, concurrent: await batchSiblings(db, existing.batchId, existing.id) }),
       ]);
       const script = await db.prescription.update({
         where: { id: existing.id },
@@ -236,7 +283,7 @@ export async function scriptsRoutes(app: FastifyInstance) {
     const previous = s.originalId
       ? await prisma.prescription.findFirst({ where: { OR: [{ id: s.originalId }, { originalId: s.originalId }], supplyNo: s.supplyNo - 1 }, select: { dispensedAt: true } })
       : null;
-    const alerts = await safetyFor(prisma, s.patient, s.drug, { excludeScriptId: s.id, previousSupplyAt: previous?.dispensedAt });
+    const alerts = await safetyFor(prisma, s.patient, s.drug, { excludeScriptId: s.id, previousSupplyAt: previous?.dispensedAt, concurrent: await batchSiblings(prisma, s.batchId, s.id) });
     const highAlerts = alerts.filter((a) => a.severity === 'HIGH');
     const unaddressed = highAlerts.filter((a) => !body.interventions.some((i) => i.alertType === a.type));
     if (unaddressed.length) throw unprocessable('Record an intervention for each high-severity alert', { alerts: unaddressed });
@@ -337,6 +384,79 @@ async function loadScript(req: FastifyRequest, id: string) {
     include: { patient: true, prescriber: true, drug: true, product: true, interventions: true },
   });
   if (!script) throw notFound('Prescription');
+  return script;
+}
+
+async function loadPatient(db: Db, tenantId: string, patientId: string) {
+  const patient = await db.patient.findFirst({ where: { id: patientId, tenantId } });
+  if (!patient) throw notFound('Patient');
+  return patient;
+}
+
+/** Drugs in the same order as `ids` (ids may repeat). */
+async function loadDrugs(db: Db, tenantId: string, ids: string[]) {
+  const rows = await db.drug.findMany({ where: { id: { in: [...new Set(ids)] }, tenantId } });
+  return ids.map((id) => {
+    const drug = rows.find((d) => d.id === id);
+    if (!drug) throw notFound('Medicine');
+    return drug;
+  });
+}
+
+type PatientRow = Awaited<ReturnType<typeof loadPatient>>;
+type DrugRow = Awaited<ReturnType<typeof loadDrugs>>[number];
+
+/** Checks that don't need the transaction: prescriber, quantities, pack/brand substitution. */
+async function validateScript(tenantId: string, body: ScriptInput, drug: DrugRow, prefix = '') {
+  try {
+    await assertPrescriber(tenantId, body.prescriberId);
+    validateAgainstDrug(body, drug);
+    if (body.productId) await assertProductForDrug(tenantId, body.productId, drug.id, body.brandSubstitution);
+  } catch (e) {
+    if (prefix && e instanceof Error) e.message = `${prefix}${e.message}`;
+    throw e;
+  }
+}
+
+/** Claims the eRx token (if any), prices, safety-checks and records one script. Runs inside a transaction. */
+async function createScript(req: FastifyRequest, db: Db, patient: PatientRow, drug: DrugRow, body: ScriptInput, opts: { batchId: string | null; concurrent: ReturnType<typeof othersOnIntake> }) {
+  const tenantId = tenantOf(req);
+  const storeId = storeOf(req);
+  if (body.source !== 'PAPER') {
+    if (!body.erxToken) throw badRequest('An eRx token is required for electronic prescriptions');
+    const token = await db.erxToken.findFirst({ where: { tenantId, token: body.erxToken.toUpperCase() } });
+    if (!token) throw notFound('Electronic prescription token');
+    if (token.claimed) throw conflict(`Token ${token.token} has already been dispensed`);
+    if (token.patientId !== patient.id) throw badRequest(`Token ${token.token} was issued for a different patient`);
+    await db.erxToken.update({ where: { token: token.token }, data: { claimed: true } });
+  }
+  const [price, alerts] = await Promise.all([
+    priceFor(db, { tenantId, storeId, patient, drug, productId: body.productId, scriptType: body.scriptType, quantity: body.quantity }),
+    safetyFor(db, patient, drug, { concurrent: opts.concurrent }),
+  ]);
+  const number = await nextNumber(() => db.prescription.count({ where: { storeId } }), 'RX', 7);
+  const script = await db.prescription.create({
+    data: {
+      ...body,
+      erxToken: body.erxToken?.toUpperCase() ?? null,
+      tenantId,
+      storeId,
+      number,
+      batchId: opts.batchId,
+      status: 'IN_PROGRESS',
+      patientPrice: price.patientPrice,
+      governmentContribution: price.governmentContribution,
+      safetyNetContribution: price.safetyNetContribution,
+      pricingBasis: price.basis,
+      alerts: json.stringify(alerts),
+      preparedById: req.ctx.userId,
+    },
+  });
+  await audit(db, actorFrom(req), {
+    module: 'DISPENSE', action: 'script.create', entityType: 'Prescription', entityId: script.id,
+    summary: `Script ${number} created — ${drug.brandName} ${drug.strength} × ${body.quantity} (${body.source === 'PAPER' ? 'paper' : 'eRx'})${opts.batchId ? ' as part of a multi-item intake' : ''}`,
+    after: { status: script.status, patientPrice: price.patientPrice, alerts: alerts.map((a) => a.title), batchId: opts.batchId },
+  });
   return script;
 }
 

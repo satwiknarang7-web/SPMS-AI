@@ -47,7 +47,7 @@ export function DispensePricing() {
                   <TD>{r.groupName}</TD>
                   <TD><Badge tone="blue">{r.condition}</Badge></TD>
                   <TD className="text-ink-600">{r.condition === 'PRIVATE' ? `${r.markupPct}% + ${money(r.dispensingFee)} · min ${r.minMarginPct}%` : r.copayDiscount ? `${money(r.copayDiscount)} off co-payment` : 'Standard co-payment'}</TD>
-                  <TD className="text-ink-500">{r.delivery ? <>{r.delivery.applied}/{r.delivery.total} stores{new Date(r.delivery.effectiveAt) > new Date() && <span className="block text-xs text-violet-700">effective {dateTime(r.delivery.effectiveAt)}</span>}</> : '—'}</TD>
+                  <TD className="text-ink-500">{r.delivery ? <>{r.delivery.applied}/{r.delivery.total} stores{new Date(r.delivery.effectiveAt) > new Date() && <span className="block text-xs text-tertiary-600">effective {dateTime(r.delivery.effectiveAt)}</span>}</> : '—'}</TD>
                   <TD><StatusBadge status={r.status} /></TD>
                   <TD align="right">
                     {r.status === 'DRAFT' && (
